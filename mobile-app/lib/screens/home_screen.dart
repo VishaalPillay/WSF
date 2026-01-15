@@ -21,10 +21,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // This triggers the permission dialogs on app start
     _requestPermissions();
   }
 
   Future<void> _requestPermissions() async {
+    // Requesting Location and Microphone permissions
     await [
       Permission.location,
       Permission.microphone, 
@@ -40,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       // Sliding Panel
       body: SlidingUpPanel(
-        maxHeight: 450, // INCREASED HEIGHT (Fixes overflow)
+        maxHeight: 450, 
         minHeight: 150,
         parallaxEnabled: true,
         parallaxOffset: .5,
@@ -171,7 +173,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // The Content inside the Sliding Panel
   Widget _buildBottomSheet() {
-    // FIXED: Wrapped in SingleChildScrollView to prevent overflow
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
@@ -255,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 25),
 
-          // Safe Havens - REMOVED EXPANDED (Use normal column flow)
+          // Safe Havens
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 25),
             child: Column(
@@ -272,7 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 15),
                 _buildSafePlaceTile("Katpadi Station", "0.5 km • Open 24x7"),
                 _buildSafePlaceTile("VIT Main Gate", "1.2 km • Security Present"),
-                const SizedBox(height: 20), // Extra padding at bottom for scroll
+                const SizedBox(height: 20), 
               ],
             ),
           )
