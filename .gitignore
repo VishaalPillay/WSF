@@ -1,5 +1,73 @@
-node_modules/
-__pycache__/
-venv/
-.env
+# =========================
+# OPERATING SYSTEMS
+# =========================
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# =========================
+# FLUTTER / DART (Mobile App)
+# =========================
+**/mobile-app/.dart_tool/
+**/mobile-app/.flutter-plugins
+**/mobile-app/.flutter-plugins-dependencies
+**/mobile-app/.pub-cache/
+**/mobile-app/build/
+
+# iOS / Mac Specific (Flutter)
+**/mobile-app/ios/Flutter/Generated.xcconfig
+**/mobile-app/ios/Flutter/flutter_export_environment.sh
+**/mobile-app/ios/Pods/
+**/mobile-app/ios/.symlinks/
+**/mobile-app/ios/Podfile.lock
+
+# Android Specific (Flutter)
+**/mobile-app/android/gradle/wrapper/gradle-wrapper.jar
+**/mobile-app/android/.gradle
+**/mobile-app/android/captures/
+**/mobile-app/android/gradlew
+**/mobile-app/android/gradlew.bat
+**/mobile-app/android/local.properties
+
+# =========================
+# PYTHON (Backend / AI)
+# =========================
+**/backend-ai/__pycache__/
+**/backend-ai/*.py[cod]
+**/backend-ai/venv/
+**/backend-ai/.venv/
+**/backend-ai/env/
+**/backend-ai/.env
+
+# =========================
+# NODE / WEB (Web Dashboard)
+# =========================
+**/web-dashboard/node_modules/
+**/web-dashboard/dist/
+**/web-dashboard/build/
+**/web-dashboard/.env
+**/web-dashboard/npm-debug.log*
+**/web-dashboard/yarn-error.log*
+
+# =========================
+# IDEs & EDITORS
+# =========================
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# =========================
+# MISC
+# =========================
+# Ignore specific large files if not using Git LFS
+# *.tflite (Commented out because you NEED this for your project)
