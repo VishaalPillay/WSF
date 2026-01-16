@@ -1,7 +1,124 @@
-[
-    {
-        "id": 1,
-        "type": "theft",
-        "location": "Main St"
-    }
-]
+{
+    "meta": {
+        "source": "Criminological Safety Audit: Vellore-Katpadi Urban Agglomeration",
+        "center_point": "VIT Vellore Campus",
+        "center_lat": 12.9692,
+        "center_lng": 79.1559,
+        "radius": "15km"
+    },
+    "incidents": [
+        {
+            "id": 101,
+            "location": "Sathuvachari (Burial Ground Area)",
+            "lat": 12.9490,
+            "lng": 79.1650,
+            "severity": "HIGH",
+            "type": "Violence/Abduction",
+            "active_hours": "18-06",
+            "description": "Critical Red Zone along NH 48. High risk of share autos diverting to secluded areas after dark."
+        },
+        {
+            "id": 102,
+            "location": "Green Circle Junction",
+            "lat": 12.9716,
+            "lng": 79.1594,
+            "severity": "HIGH",
+            "type": "Harassment/Abduction",
+            "active_hours": "21-05",
+            "description": "High transit friction zone. Funnel for drunkards moving between TASMAC outlets late at night."
+        },
+        {
+            "id": 103,
+            "location": "Katpadi Railway Station",
+            "lat": 12.9796,
+            "lng": 79.1374,
+            "severity": "HIGH",
+            "type": "Assault/Robbery",
+            "description": "Epicenter of transit crime. Risk of assault on moving trains near station approaches."
+        },
+        {
+            "id": 104,
+            "location": "VIT Road (UGD Works)",
+            "lat": 12.9750,
+            "lng": 79.1500,
+            "severity": "HIGH",
+            "type": "Chain Snatching",
+            "description": "Construction-induced traffic slowdowns create a 'natural trap' for women on two-wheelers."
+        },
+        {
+            "id": 105,
+            "location": "Chittoor Bus Stand (Katpadi)",
+            "lat": 12.9760,
+            "lng": 79.1350,
+            "severity": "HIGH",
+            "type": "Vehicle Theft/Harassment",
+            "description": "Hotspot for juvenile crime rings targeting two-wheelers. General atmosphere of lawlessness."
+        },
+        {
+            "id": 106,
+            "location": "Kagithapattarai (Palar River Bank)",
+            "lat": 12.9550,
+            "lng": 79.1450,
+            "severity": "HIGH",
+            "type": "Public Nuisance/Harassment",
+            "active_hours": "19-05",
+            "description": "Extreme density of liquor outlets. Streets colonized by intoxicated men after 7 PM."
+        },
+        {
+            "id": 107,
+            "location": "Vellore Fort Park (Moat Area)",
+            "lat": 12.9204,
+            "lng": 79.1325,
+            "severity": "HIGH",
+            "type": "Sexual Assault",
+            "active_hours": "18-06",
+            "description": "Predatory zone after dark. Secluded corners near the moat obscure visibility."
+        },
+        {
+            "id": 108,
+            "location": "Vellore New Bus Stand",
+            "lat": 12.9350,
+            "lng": 79.1450,
+            "severity": "HIGH",
+            "type": "Trafficking/Theft",
+            "description": "Dark corners and lack of police patrolling inside the terminus. High density of transient offenders."
+        },
+        {
+            "id": 109,
+            "location": "Viruthampet (Student Housing)",
+            "lat": 12.9600,
+            "lng": 79.1400,
+            "severity": "MODERATE",
+            "type": "Stalking/Snatching",
+            "description": "Narrow residential lanes. High density of students attracts stalkers."
+        },
+        {
+            "id": 110,
+            "location": "Gandhi Nagar (Residential)",
+            "lat": 12.9500,
+            "lng": 79.1350,
+            "severity": "MODERATE",
+            "type": "Chain Snatching",
+            "active_hours": "13-17",
+            "description": "Wide, tree-lined streets are desolate in afternoons. Ideal hunting ground for snatchers."
+        },
+        {
+            "id": 111,
+            "location": "Bagayam (Southern Fringe)",
+            "lat": 12.8900,
+            "lng": 79.1200,
+            "severity": "MODERATE",
+            "type": "Rowdyism",
+            "description": "Stronghold of gangs. Inter-gang violence creates a volatile environment."
+        },
+        {
+            "id": 112,
+            "location": "Ariyur",
+            "lat": 12.8800,
+            "lng": 79.1000,
+            "severity": "MODERATE",
+            "type": "Domestic Violence",
+            "description": "Semi-rural settlement. High incidence of domestic violence."
+        }
+    ]
+}
