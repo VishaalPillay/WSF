@@ -26,12 +26,16 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+    
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SENTRA needs background location to monitor safety while your phone is locked.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>SENTRA needs background location to monitor safety while your phone is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SENTRA needs your location to route you through safe zones.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>SENTRA listens for high-stress audio triggers like screaming.</string>
+    
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
