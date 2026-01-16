@@ -1,7 +1,44 @@
-[
-    {
-        "id": 1,
-        "type": "theft",
-        "location": "Main St"
-    }
-]
+{
+    "incidents": [
+        {
+            "id": 1,
+            "severity": "HIGH",
+            "lat": 12.971598,
+            "lng": 79.159398,
+            "type": "Harassment",
+            "location": "Green Circle (High Traffic Risk)"
+        },
+        {
+            "id": 2,
+            "severity": "HIGH",
+            "lat": 12.971700,
+            "lng": 79.159500,
+            "type": "Theft",
+            "location": "Green Circle North"
+        },
+        {
+            "id": 3,
+            "severity": "HIGH",
+            "lat": 12.971500,
+            "lng": 79.159300,
+            "type": "Assault",
+            "location": "Green Circle South"
+        },
+        {
+            "id": 4,
+            "severity": "MODERATE",
+            "lat": 12.979600,
+            "lng": 79.137400,
+            "type": "Poor Lighting",
+            "location": "Katpadi Railway Station"
+        },
+        {
+            "id": 5,
+            "severity": "HIGH",
+            "lat": 12.960000,
+            "lng": 79.150000,
+            "type": "Harassment",
+            "location": "Dark Alley near VIT Main Gate"
+        }
+    ]
+}
