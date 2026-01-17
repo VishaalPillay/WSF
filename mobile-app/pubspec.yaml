@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Networking
+  http: ^1.2.0
+
   # Maps & Location
   mapbox_maps_flutter: ^2.0.0
   geolocator: ^10.1.0
@@ -32,4 +35,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Asset block removed

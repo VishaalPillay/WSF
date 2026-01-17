@@ -1,8 +1,10 @@
+import 'dart:math' as math; // ✅ Import Math for calculating polygon circles
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sliding_up_panel/sliding_up_panel.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mobile_app/services/api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,34 +15,105 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   MapboxMap? mapboxMap;
+  PolygonAnnotationManager? _polygonManager; // ✅ Switch from Circle to Polygon Manager
+  final ApiService _apiService = ApiService();
   
-  // VIT Vellore Coordinates (Your Hackathon Location)
+  // VIT Vellore Coordinates
   final double lat = 12.9692;
   final double lng = 79.1559;
 
   @override
   void initState() {
     super.initState();
-    // This triggers the permission dialogs on app start
     _requestPermissions();
   }
 
   Future<void> _requestPermissions() async {
-    // Requesting Location and Microphone permissions
-    await [
-      Permission.location,
-      Permission.microphone, 
-    ].request();
+    await [Permission.location, Permission.microphone].request();
   }
 
   _onMapCreated(MapboxMap mapboxMap) {
     this.mapboxMap = mapboxMap;
+
+    // ✅ Create Polygon Manager instead of Circle Manager
+    mapboxMap.annotations.createPolygonAnnotationManager().then((manager) {
+      _polygonManager = manager;
+      _loadDangerZones(); // Fetch and draw zones
+    });
+  }
+
+  // ✅ HELPER: Generates a list of coordinates forming a circle on Earth
+  // This ensures the zone is accurate (e.g. 300m) regardless of zoom level.
+  List<Position> _createGeoJSONCircle(double centerLat, double centerLng, double radiusInMeters) {
+    int points = 64; // Smoothness of the circle
+    List<Position> coordinates = [];
+    double earthRadius = 6371000.0; // Meters
+
+    for (int i = 0; i < points; i++) {
+      double angle = (i * 360 / points) * (math.pi / 180);
+      double latOffset = (radiusInMeters / earthRadius) * (180 / math.pi);
+      double lngOffset = (radiusInMeters / earthRadius) * (180 / math.pi) / math.cos(centerLat * math.pi / 180);
+
+      double pLat = centerLat + (latOffset * math.sin(angle));
+      double pLng = centerLng + (lngOffset * math.cos(angle));
+      
+      coordinates.add(Position(pLng, pLat));
+    }
+    // Close the loop
+    coordinates.add(coordinates.first);
+    return coordinates;
+  }
+
+  // 🔥 UPDATED LOGIC: Draws Polygons (Fixed to Ground)
+  Future<void> _loadDangerZones() async {
+    print("🔄 Fetching Danger Zones...");
+    final zones = await _apiService.getDangerZones();
+
+    if (zones.isEmpty) {
+      print("⚠️ No zones found or connection failed.");
+      return;
+    }
+
+    List<PolygonAnnotationOptions> polygonOptions = [];
+
+    for (var zone in zones) {
+      if (zone['lat'] != null && zone['lng'] != null) {
+        
+        // 1. Determine Color
+        int activeFillColor;
+        int activeStrokeColor; // This will act as the border
+        String severity = zone['severity'] ?? 'HIGH';
+
+        if (severity == 'MODERATE') {
+          activeFillColor = Colors.amber.withOpacity(0.25).value; // Lighter fill
+          activeStrokeColor = Colors.amber.withOpacity(0.8).value; // Darker border
+        } else {
+          activeFillColor = Colors.red.withOpacity(0.25).value; 
+          activeStrokeColor = Colors.red.withOpacity(0.8).value; 
+        }
+
+        // 2. Calculate the shape (300m Radius for each zone)
+        final geometry = _createGeoJSONCircle(zone['lat'], zone['lng'], 300);
+
+        // 3. Add Polygon
+        polygonOptions.add(
+          PolygonAnnotationOptions(
+            geometry: Polygon(coordinates: [geometry]), // Note: Needs nested list
+            fillColor: activeFillColor,
+            fillOutlineColor: activeStrokeColor,
+          ),
+        );
+      }
+    }
+
+    // Draw all polygons
+    await _polygonManager?.createMulti(polygonOptions);
+    print("✅ Drawn ${polygonOptions.length} Accurate Ground Zones.");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Sliding Panel
       body: SlidingUpPanel(
         maxHeight: 450, 
         minHeight: 150,
@@ -53,131 +126,130 @@ class _HomeScreenState extends State<HomeScreen> {
         panel: _buildBottomSheet(),
         body: Stack(
           children: [
-            // 1. The Map Layer 
+            // 1. Map Layer
             MapWidget(
               key: const ValueKey("mapWidget"),
               cameraOptions: CameraOptions(
                 center: Point(coordinates: Position(lng, lat)),
-                zoom: 15.0,
+                zoom: 13.5, // Start slightly zoomed out to see the zones
               ),
               styleUri: MapboxStyles.MAPBOX_STREETS, 
               onMapCreated: _onMapCreated,
             ),
             
-            // 2. "SafeNav" Search Bar with Depth
+            // 2. Search Bar
             Positioned(
               top: 60,
               left: 20,
               right: 20,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 15),
-                height: 55,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18), 
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
-                      blurRadius: 20, 
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.my_location, color: Color(0xFFFF4081)),
-                    const SizedBox(width: 15),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Enter Destination",
-                          style: GoogleFonts.poppins(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                        Text(
-                          "We'll find the safest route...",
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey[500],
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                             color: Colors.black.withOpacity(0.05),
-                             blurRadius: 5,
-                             offset: const Offset(0, 2),
-                          )
-                        ]
-                      ),
-                      child: const Icon(Icons.mic, color: Colors.grey),
-                    )
-                  ],
-                ),
-              ),
+              child: _buildSearchBar(),
             ),
           ],
         ),
       ),
-      
-      // 3. SENTRA Navigation Bar
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
-            )
-          ]
-        ),
-        child: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          elevation: 0, 
-          selectedItemColor: const Color(0xFFFF4081),
-          unselectedItemColor: Colors.grey[400],
-          showUnselectedLabels: true,
-          selectedLabelStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
-          unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded, size: 28), 
-              label: "Home"
+      bottomNavigationBar: _buildNavBar(),
+    );
+  }
+
+  // --- UI WIDGETS (Unchanged) ---
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      height: 55,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18), 
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 20, 
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.my_location, color: Color(0xFFFF4081)),
+          const SizedBox(width: 15),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Enter Destination",
+                style: GoogleFonts.poppins(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                "We'll find the safest route...",
+                style: GoogleFonts.poppins(
+                  color: Colors.grey[500],
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              shape: BoxShape.circle,
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.emergency_rounded, color: Colors.red, size: 36), 
-              label: "SOS"
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_rounded, size: 28), 
-              label: "Profile"
-            ),
-          ],
-        ),
+            child: const Icon(Icons.mic, color: Colors.grey),
+          )
+        ],
       ),
     );
   }
 
-  // The Content inside the Sliding Panel
+  Widget _buildNavBar() {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          )
+        ]
+      ),
+      child: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        elevation: 0, 
+        selectedItemColor: const Color(0xFFFF4081),
+        unselectedItemColor: Colors.grey[400],
+        showUnselectedLabels: true,
+        selectedLabelStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_rounded, size: 28), 
+            label: "Home"
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.emergency_rounded, color: Colors.red, size: 36), 
+            label: "SOS"
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_rounded, size: 28), 
+            label: "Profile"
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomSheet() {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
-          // Gradient Banner
           Container(
             width: double.infinity,
             height: 90,
@@ -191,13 +263,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 topLeft: Radius.circular(24),
                 topRight: Radius.circular(24),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2C3E50).withOpacity(0.3),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
-                ),
-              ],
             ),
             padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
             child: Row(
@@ -240,23 +305,20 @@ class _HomeScreenState extends State<HomeScreen> {
           
           const SizedBox(height: 30),
           
-          // Quick Actions
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround, 
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildFeatureIcon(Icons.share_location_rounded, "Share Loc", Colors.blue[50]!, Colors.blue),
                 _buildFeatureIcon(Icons.local_police_rounded, "Police", Colors.orange[50]!, Colors.orange),
-                _buildFeatureIcon(Icons.report_problem_rounded, "Report", Colors.red[50]!, Colors.red),
+                _buildFeatureIcon(Icons.report_problem_rounded, "Place Rating", Colors.red[50]!, Colors.red),
               ],
             ),
           ),
 
           const SizedBox(height: 25),
 
-          // Safe Havens
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 25),
             child: Column(
@@ -291,13 +353,6 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: iconColor.withOpacity(0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
           ),
           child: Icon(icon, color: iconColor, size: 30),
         ),
@@ -349,14 +404,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const Spacer(),
-          Container(
-            padding: const EdgeInsets.all(8),
-             decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(8)
-            ),
-            child: Icon(Icons.directions_outlined, color: Colors.grey[400], size: 20)
-          ),
+          const Icon(Icons.directions_outlined, color: Colors.grey, size: 20),
         ],
       ),
     );

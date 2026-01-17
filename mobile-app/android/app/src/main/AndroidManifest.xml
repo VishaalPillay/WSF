@@ -9,6 +9,9 @@
         android:label="mobile_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="com.mapbox.token"
+            android:value="pk.eyJ1IjoibmlraGlsMjEwMjA2IiwiYSI6ImNta2U0NG0zdTAzMzUzZXMwZjZwbXFzZ3kifQ.fgjpDhGp_9bUapwaLEvtsg" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -32,6 +35,7 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+            
     </application>
     
     <queries>
