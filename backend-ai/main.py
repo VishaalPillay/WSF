@@ -1,5 +1,6 @@
 import json
 import os
+from routes.safenav import find_safest_route
 from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
@@ -105,14 +106,17 @@ def get_danger_zones(simulated_hour: Optional[int] = None):
 @app.post("/get-safe-route")
 def calculate_safe_route(request: RouteRequest):
     """
-    Stub for Phase 2: Will calculate SafeNav Score.
+    Phase 2 Logic: Real AI Routing
     """
-    print(f"📍 Route Request: {request.start_lat},{request.start_lng} -> {request.end_lat},{request.end_lng}")
+    print(f"📍 Calculating Safe Route: {request.start_lat},{request.start_lng} -> {request.end_lat},{request.end_lng}")
     
-    return {
-        "status": "success",
-        "route_id": "route_123",
-        "safety_score": 85,
-        "risk_level": "MODERATE",
-        "message": "Route calculation stub active. Mapbox integration pending."
-    }
+    # 1. Pass the request + Our Crime Database to the Engine
+    result = find_safest_route(
+        request.start_lat, 
+        request.start_lng, 
+        request.end_lat, 
+        request.end_lng, 
+        CRIME_DATA # We pass the loaded JSON data here
+    )
+    
+    return result
