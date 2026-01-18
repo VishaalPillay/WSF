@@ -2,14 +2,19 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // ⚠️ CHANGE THIS based on your device (See note above)
-  // Mac (iOS Simulator): 'http://127.0.0.1:8000'
-  // Windows/Android Emulator: 'http://10.0.2.2:8000'
+  // ⚠️ Keep this IP matching your backend (Mac/Windows/Phone)
   final String _baseUrl = 'http://192.168.1.10:8000'; 
 
-  // Fetch Danger Zones
-  Future<List<dynamic>> getDangerZones() async {
-    final url = Uri.parse('$_baseUrl/zones');
+  // UPDATED: Now accepts a simulated hour (e.g., 22 for 10 PM)
+  Future<List<dynamic>> getDangerZones({int? simulatedHour}) async {
+    // Build the URL with the simulation parameter if provided
+    String urlString = '$_baseUrl/zones';
+    if (simulatedHour != null) {
+      urlString += '?simulated_hour=$simulatedHour';
+    }
+    
+    final url = Uri.parse(urlString);
+    
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -25,7 +30,6 @@ class ApiService {
     }
   }
 
-  // 🔥 NEW: Connects to your friend's backend route logic
   Future<Map<String, dynamic>?> getSafeRoute(double startLat, double startLng, double endLat, double endLng) async {
     final url = Uri.parse('$_baseUrl/get-safe-route');
     

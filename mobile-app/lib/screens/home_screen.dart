@@ -33,7 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // State Variables
   bool _isRouteActive = false;
-  bool _isInputExpanded = false; // Controls the animation state
+  bool _isInputExpanded = false; 
+  bool _isNightMode = false; // Controls Day/Night Simulation
   int _riskScore = 0;
   double _durationMin = 0;
 
@@ -70,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // --- 1. DANGER ZONES ---
+  // --- 1. DANGER ZONES (UPDATED FOR SIMULATION) ---
   List<Position> _createGeoJSONCircle(
       double centerLat, double centerLng, double radiusInMeters) {
     int points = 64;
@@ -91,8 +92,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadDangerZones() async {
-    final zones = await _apiService.getDangerZones();
+    // 🔥 SIMULATION LOGIC:
+    // If Night Mode is ON -> Request data for 22:00 (10 PM)
+    // If Day Mode is ON   -> Request data for 10:00 (10 AM)
+    int simulatedTime = _isNightMode ? 22 : 10;
+    
+    // Clear existing zones first to avoid duplicates
+    await _polygonManager?.deleteAll();
+
+    final zones = await _apiService.getDangerZones(simulatedHour: simulatedTime);
+    
     if (zones.isEmpty) return;
+    
     List<PolygonAnnotationOptions> polygonOptions = [];
     for (var zone in zones) {
       if (zone['lat'] != null && zone['lng'] != null) {
@@ -123,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
     print("📍 Destination Tapped: $lat, $lng");
 
     setState(() {
-      _isInputExpanded = true; // Auto-expand when map is tapped
+      _isInputExpanded = true; 
       _destinationController.text =
           "${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}";
     });
@@ -180,12 +191,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // --- 3. THEME & SIMULATION LOGIC ---
+  void _toggleSimulationMode() {
+    setState(() {
+      _isNightMode = !_isNightMode;
+    });
+
+    // 1. Switch Mapbox Style
+    if (mapboxMap != null) {
+      mapboxMap!.loadStyleURI(
+          _isNightMode ? MapboxStyles.DARK : MapboxStyles.MAPBOX_STREETS);
+      
+      // 2. Re-load zones with the NEW simulated time
+      // Giving a slight delay to allow style to load
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _loadDangerZones(); 
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SlidingUpPanel(
         maxHeight: 450,
-        minHeight: 150,
+        minHeight: 180, 
         parallaxEnabled: true,
         parallaxOffset: .5,
         borderRadius: const BorderRadius.only(
@@ -201,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 center: Point(coordinates: Position(startLng, startLat)),
                 zoom: 13.5,
               ),
-              styleUri: MapboxStyles.MAPBOX_STREETS,
+              styleUri: _isNightMode ? MapboxStyles.DARK : MapboxStyles.MAPBOX_STREETS,
               onMapCreated: _onMapCreated,
               onTapListener: _handleMapTap,
             ),
@@ -215,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- 3. ANIMATED DYNAMIC SEARCH BAR (UPDATED) ---
+  // --- 4. ANIMATED DYNAMIC SEARCH BAR ---
   Widget _buildAnimatedSearchPanel() {
     return Positioned(
       top: 55,
@@ -230,9 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOutCubic,
-          height: _isInputExpanded
-              ? 160
-              : 55, // Increased slightly to 160 to be safe
+          height: _isInputExpanded ? 160 : 55,
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -247,7 +275,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
-            // ✅ FIX: Wrap the child in SingleChildScrollView to prevent overflow errors during animation
             child: SingleChildScrollView(
               physics: const NeverScrollableScrollPhysics(),
               child: _isInputExpanded
@@ -260,7 +287,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Initial State: "Where to?"
   Widget _buildCollapsedInput() {
     return Row(
       key: const ValueKey("collapsed"),
@@ -284,14 +310,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Expanded State: Uber Style Dual Inputs (UPDATED)
   Widget _buildExpandedInputs() {
     return Column(
       key: const ValueKey("expanded"),
       mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center, // Center content vertically
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Row 1: Start Location
         Row(
           children: [
             GestureDetector(
@@ -330,10 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-
         Divider(color: Colors.grey[200], height: 20, thickness: 1),
-
-        // Row 2: Destination
         Row(
           children: [
             const SizedBox(width: 30),
@@ -427,7 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () {
                   setState(() {
                     _isRouteActive = false;
-                    _isInputExpanded = false; // Collapse input on clear
+                    _isInputExpanded = false;
                     _destinationController.clear();
                     _polylineManager?.deleteAll();
                     _pointManager?.deleteAll();
@@ -449,21 +470,23 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Default Bottom Sheet Content (unchanged)
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
             width: double.infinity,
             height: 90,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF2C3E50), Color(0xFF4CA1AF)],
+                colors: _isNightMode
+                    ? [const Color(0xFF0F2027), const Color(0xFF203A43)] 
+                    : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.only(
+              borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24), topRight: Radius.circular(24)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
@@ -500,22 +523,123 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 30),
+          
+          const SizedBox(height: 25),
+
+          // --- TIME SIMULATION SLIDER (REPLACES SHARE BUTTONS) ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildFeatureIcon(Icons.share_location_rounded, "Share Loc",
-                    Colors.blue[50]!, Colors.blue),
-                _buildFeatureIcon(Icons.local_police_rounded, "Police",
-                    Colors.orange[50]!, Colors.orange),
-                _buildFeatureIcon(Icons.report_problem_rounded, "Place Rating",
-                    Colors.red[50]!, Colors.red),
+                 Text("Simulation Mode",
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600])),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: _toggleSimulationMode,
+                  child: Container(
+                    width: double.infinity,
+                    height: 55,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      color: Colors.grey[200],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4)
+                        )
+                      ]
+                    ),
+                    child: Stack(
+                      children: [
+                        // Background Text Labels
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Expanded(
+                              child: Center(
+                                child: Text("Day Time",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: !_isNightMode ? Colors.black54 : Colors.grey)),
+                              ),
+                            ),
+                            Expanded(
+                              child: Center(
+                                child: Text("Night Time",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: _isNightMode ? Colors.black54 : Colors.grey)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        // Animated Slider Thumb
+                        AnimatedAlign(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutBack,
+                          alignment: _isNightMode 
+                              ? Alignment.centerRight 
+                              : Alignment.centerLeft,
+                          child: Container(
+                            width: 160, 
+                            height: 45,
+                            margin: const EdgeInsets.symmetric(horizontal: 5),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: _isNightMode 
+                                    ? [const Color(0xFF2b5876), const Color(0xFF4e4376)] // Deep Purple/Blue
+                                    : [const Color(0xFFF2994A), const Color(0xFFF2C94C)], // Orange/Yellow
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                              borderRadius: BorderRadius.circular(25),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _isNightMode ? Colors.purple.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2)
+                                )
+                              ]
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _isNightMode ? Icons.nights_stay_rounded : Icons.wb_sunny_rounded,
+                                  color: Colors.white,
+                                  size: 20
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _isNightMode ? "Night View" : "Day View",
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13
+                                  ),
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
+
           const SizedBox(height: 25),
+          
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 25),
             child: Column(
@@ -536,27 +660,6 @@ class _HomeScreenState extends State<HomeScreen> {
           )
         ],
       ),
-    );
-  }
-
-  Widget _buildFeatureIcon(
-      IconData icon, String label, Color bg, Color iconColor) {
-    return Column(
-      children: [
-        Container(
-          height: 65,
-          width: 65,
-          decoration:
-              BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-          child: Icon(icon, color: iconColor, size: 30),
-        ),
-        const SizedBox(height: 10),
-        Text(label,
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-                color: Colors.black87)),
-      ],
     );
   }
 
