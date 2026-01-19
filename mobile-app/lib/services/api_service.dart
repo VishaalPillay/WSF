@@ -2,8 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // ⚠️ Keep this IP matching your backend (Mac/Windows/Phone)
-  final String _baseUrl = 'http://192.168.1.10:8000'; 
+  final String _baseUrl = 'http://172.20.10.7:8000';
 
   // UPDATED: Now accepts a simulated hour (e.g., 22 for 10 PM)
   Future<List<dynamic>> getDangerZones({int? simulatedHour}) async {
@@ -12,9 +11,9 @@ class ApiService {
     if (simulatedHour != null) {
       urlString += '?simulated_hour=$simulatedHour';
     }
-    
+
     final url = Uri.parse(urlString);
-    
+
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -30,9 +29,10 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>?> getSafeRoute(double startLat, double startLng, double endLat, double endLng) async {
+  Future<Map<String, dynamic>?> getSafeRoute(
+      double startLat, double startLng, double endLat, double endLng) async {
     final url = Uri.parse('$_baseUrl/get-safe-route');
-    
+
     try {
       final response = await http.post(
         url,
