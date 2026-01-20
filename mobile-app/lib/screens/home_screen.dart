@@ -11,6 +11,7 @@ import 'package:mobile_app/services/mapbox_service.dart';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:background_sms/background_sms.dart';
+import 'package:mobile_app/services/audio_sentinel_service.dart'; // ✅ Added Import
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,6 +28,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   final ApiService _apiService = ApiService();
   final MapboxService _mapboxService = MapboxService();
+
+  // ✅ NEW: Audio Sentinel Service
+  final AudioSentinelService _audioSentinel = AudioSentinelService();
 
   // Text Controllers
   final TextEditingController _startController = TextEditingController();
@@ -59,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.initState();
     _startController.text = "Current Location";
     _requestPermissions();
+    _initAudioSentinel(); // ✅ Start Listening Immediately
   }
 
   @override
@@ -68,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _startFocus.dispose();
     _destinationFocus.dispose();
     _debounce?.cancel();
+    _audioSentinel.stopListening(); // ✅ Stop listening to save battery
     super.dispose();
   }
 
@@ -77,6 +83,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       Permission.microphone,
       Permission.sms,
     ].request();
+  }
+
+  // ✅ NEW: Initialize AI Audio Listener
+  void _initAudioSentinel() async {
+    await _audioSentinel.initialize();
+
+    // When Danger is Heard (e.g., "Scream"), Trigger the Popup
+    _audioSentinel.onDangerDetected = (event, confidence) {
+      print("🚨 UI RECEIVED DANGER ALERT: $event");
+
+      // Ensure we are on the main thread and not already showing a dialog
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        _handleSosSequence(triggerReason: event);
+      }
+    };
+
+    // Auto-start listening
+    _audioSentinel.startListening();
+    setState(() {}); // Update UI to show active mic icon
   }
 
   _onMapCreated(MapboxMap mapboxMap) {
@@ -106,8 +131,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     for (int i = 0; i < points; i++) {
       double angle = (i * 360 / points) * (math.pi / 180);
       double latOffset = (radiusInMeters / earthRadius) * (180 / math.pi);
-      double lngOffset =
-          (radiusInMeters / earthRadius) *
+      double lngOffset = (radiusInMeters / earthRadius) *
           (180 / math.pi) /
           math.cos(centerLat * math.pi / 180);
       double pLat = centerLat + (latOffset * math.sin(angle));
@@ -162,13 +186,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // --------------------------------------------------------------------------
 
   /// Starts the SOS sequence: Countdown UI -> Automatic SMS
-  void _handleSosSequence() async {
+  void _handleSosSequence({String? triggerReason}) async {
     // 1. Show the Countdown Dialog
-    bool shouldSend =
-        await showDialog(
+    bool shouldSend = await showDialog(
           context: context,
           barrierDismissible: false, // User must explicitly cancel
-          builder: (context) => const SosCountdownDialog(),
+          builder: (context) =>
+              SosCountdownDialog(triggerReason: triggerReason),
         ) ??
         false;
 
@@ -341,9 +365,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(
         encodedPolyline,
       );
-      List<Position> routeGeometry = decodedPoints
-          .map((p) => Position(p.longitude, p.latitude))
-          .toList();
+      List<Position> routeGeometry =
+          decodedPoints.map((p) => Position(p.longitude, p.latitude)).toList();
 
       _polylineManager?.create(
         PolylineAnnotationOptions(
@@ -491,16 +514,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         const Spacer(),
+
+        // ✅ NEW: AUDIO STATUS INDICATOR
         Container(
           padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: Colors.grey[100],
             shape: BoxShape.circle,
           ),
-          child: const Icon(
-            Icons.access_time_filled,
+          child: Icon(
+            _audioSentinel.isListening
+                ? Icons.mic
+                : Icons.mic_off, // Status Icon
             size: 18,
-            color: Colors.grey,
+            color: _audioSentinel.isListening
+                ? Colors.redAccent
+                : Colors.grey, // Red if listening
           ),
         ),
       ],
@@ -1090,10 +1119,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 }
 
 // --------------------------------------------------------------------------
-// 🎨 CUSTOM WIDGET: ANIMATED COUNTDOWN DIALOG
+// 🎨 CUSTOM WIDGET: ANIMATED COUNTDOWN DIALOG (Updated to show reason)
 // --------------------------------------------------------------------------
 class SosCountdownDialog extends StatefulWidget {
-  const SosCountdownDialog({super.key});
+  final String? triggerReason; // ✅ Added Reason
+  const SosCountdownDialog({super.key, this.triggerReason});
 
   @override
   State<SosCountdownDialog> createState() => _SosCountdownDialogState();
@@ -1102,7 +1132,7 @@ class SosCountdownDialog extends StatefulWidget {
 class _SosCountdownDialogState extends State<SosCountdownDialog>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  int _countdown = 5;
+  int _countdown = 10; // ✅ Increased to 10 seconds for audio buffer
   Timer? _timer;
 
   @override
@@ -1164,7 +1194,9 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                   const Icon(Icons.warning_amber_rounded, color: Colors.white),
                   const SizedBox(width: 8),
                   Text(
-                    "EMERGENCY ALERT",
+                    widget.triggerReason != null
+                        ? "DANGER DETECTED"
+                        : "EMERGENCY ALERT",
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -1174,6 +1206,16 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                 ],
               ),
             ),
+
+            // ✅ Show detected sound if triggered by AI
+            if (widget.triggerReason != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                "Heard: ${widget.triggerReason}",
+                style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
+              ),
+            ],
+
             const SizedBox(height: 30),
 
             // COUNTDOWN CIRCLE
@@ -1205,7 +1247,7 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                   width: 160,
                   height: 160,
                   child: CircularProgressIndicator(
-                    value: _countdown / 5,
+                    value: _countdown / 10, // Adjusted for 10s
                     valueColor: const AlwaysStoppedAnimation(Colors.red),
                     backgroundColor: Colors.white24,
                     strokeWidth: 8,
@@ -1251,7 +1293,9 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                 ),
                 child: Center(
                   child: Text(
-                    "CANCEL REQUEST",
+                    widget.triggerReason != null
+                        ? "I AM SAFE (CANCEL)"
+                        : "CANCEL REQUEST",
                     style: GoogleFonts.poppins(
                       color: Colors.redAccent,
                       fontWeight: FontWeight.bold,

@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  // --- NEW COLOR PALETTE (From Image) ---
+  // --- COLOR PALETTE ---
   final Color _primaryTeal = const Color.fromARGB(255, 10, 135, 152);
   final Color _lightPlatinum = const Color.fromARGB(255, 255, 246, 209);
 
@@ -47,16 +47,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   void _handleSubmit() {
     if (_formKey.currentState!.validate()) {
-      // Simulate Auth Delay
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_isRegistering ? "Creating Account..." : "Logging in..."),
-          backgroundColor: _primaryTeal, // Updated Snack bar color
+          backgroundColor: _primaryTeal,
           duration: const Duration(seconds: 1),
         ),
       );
 
-      // Navigate to Home
+      // Navigate to Home after delay
       Future.delayed(const Duration(seconds: 1), () {
         Navigator.pushReplacement(
           context,
@@ -68,13 +67,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    // Unused size variable removed to clean up warnings
-    // final size = MediaQuery.of(context).size;
-
     return Scaffold(
       body: Stack(
         children: [
-          // 1. UPDATED GRADIENT BACKGROUND (Teal to Platinum)
+          // 1. GRADIENT BACKGROUND
           Container(
             height: double.infinity,
             width: double.infinity,
@@ -82,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               gradient: LinearGradient(
                 colors: [
                   _primaryTeal,     // #2C666E
-                  Colors.blueGrey.shade700, // Darker accent for depth
+                  Colors.blueGrey.shade700, 
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -142,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       child: Icon(
                         Icons.shield_moon_rounded,
                         size: 50,
-                        color: _primaryTeal, // Icon is now Teal
+                        color: _primaryTeal,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -170,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       width: double.infinity,
                       padding: const EdgeInsets.all(30),
                       decoration: BoxDecoration(
-                        color: _lightPlatinum, // Using the lighter theme color for card bg
+                        color: _lightPlatinum, 
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
@@ -190,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               style: GoogleFonts.poppins(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: _primaryTeal, // Text is now Teal
+                                color: _primaryTeal,
                               ),
                             ),
                             const SizedBox(height: 5),
@@ -233,8 +229,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               child: ElevatedButton(
                                 onPressed: _handleSubmit,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _primaryTeal, // Button is Teal
-                                  foregroundColor: _lightPlatinum, // Text is Platinum
+                                  backgroundColor: _primaryTeal,
+                                  foregroundColor: _lightPlatinum,
                                   elevation: 5,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
@@ -314,7 +310,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         labelStyle: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 14),
         prefixIcon: Icon(icon, color: _primaryTeal.withOpacity(0.7)),
         filled: true,
-        fillColor: Colors.white, // Keep input pure white for contrast against Platinum card
+        fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

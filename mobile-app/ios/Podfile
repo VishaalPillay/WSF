@@ -36,13 +36,16 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # Add this block for permission_handler
     target.build_configurations.each do |config|
-      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
-        '$(inherited)',
-        'PERMISSION_LOCATION=1',
-        'PERMISSION_MICROPHONE=1',
-      ]
+      # 1. Ensure the definition exists and includes inherited values
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      
+      # 2. Append the permissions (This was the missing piece!)
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_LOCATION=1'
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_MICROPHONE=1'
+      
+      # Note: Permission.sms is not supported on iOS via permission_handler. 
+      # iOS does not have a system-level SMS permission like Android.
     end
   end
 end
