@@ -28,11 +28,13 @@ import { AnalyticsView } from "./AnalyticsView";
 import { IncidentsView } from "./IncidentsView";
 import { UsersView } from "./UsersView";
 import { RespondersView } from "./RespondersView";
+import { PatrolView } from "./PatrolView";
 import { Incident, LiveLocation } from "../types";
 import { useZones } from "../hooks/useZones";
 import { useRealtimeLocations } from "../hooks/useRealtimeLocations";
 import { REAL_INCIDENTS, REAL_USER_LOCATIONS } from "../data/velloreRealData";
 import { TimeMode } from "../data/crimeZones";
+import { getSupabaseClient } from "../lib/supabaseClient";
 
 /* --- COMPONENT 1: THEME SWITCH --- */
 export function ThemeToggle() {
@@ -146,7 +148,8 @@ export function UserProfile() {
 // --- NAVIGATION ITEMS ---
 const NAV_ITEMS = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { id: 'incidents', icon: ShieldAlert, label: 'Incidents' }
+  { id: 'zones', icon: MapPin, label: 'Zones' },
+  { id: 'patrol', icon: Radio, label: 'Patrol' }
 ];
 
 // --- MAIN PAGE LAYOUT ---
@@ -166,19 +169,23 @@ const mockIncidents: Incident[] = [
   }
 ];
 
+
 export const DashboardPage: React.FC = () => {
   // Time mode state for day/night zone filtering
   const [timeMode, setTimeMode] = useState<TimeMode>('all');
 
   // Real-time data hooks
-  const { zones } = useZones(timeMode);
-  const { locations } = useRealtimeLocations(null);
+  const { zones, addZone, deleteZone } = useZones(timeMode);
 
-  // Use real user locations as fallback if no real-time data
-  const displayLocations = locations.length > 0 ? locations : REAL_USER_LOCATIONS as LiveLocation[];
+  // Connect to Supabase for real-time locations
+  const supabase = getSupabaseClient();
+  const { locations } = useRealtimeLocations(supabase);
+
+  // Fallback to empty array if no data, or keep empty to wait for stream
+  const displayLocations = locations;
 
   // Active view state
-  const [activeView, setActiveView] = useState('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'zones' | 'patrol' | 'analytics' | 'incidents' | 'users' | 'responders' | 'settings'>('dashboard');
 
   return (
     <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 font-sans overflow-hidden dark">
@@ -197,7 +204,7 @@ export const DashboardPage: React.FC = () => {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveView(item.id)}
+                onClick={() => setActiveView(item.id as typeof activeView)}
                 className={`p-3 rounded-lg transition-all duration-200 group relative ${isActive
                   ? "text-cyan-400"
                   : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
@@ -260,6 +267,7 @@ export const DashboardPage: React.FC = () => {
                 loading={false}
                 supabaseEnabled={false}
                 mapStyle="mapbox://styles/mapbox/dark-v11"
+                showPatrolRoutes={false}
               />
             </>
           )}
@@ -280,19 +288,25 @@ export const DashboardPage: React.FC = () => {
             <ZoneManagement
               zones={zones}
               onAddZone={() => {
-                console.log('Add zone clicked - TODO: Implement zone creation modal');
+                console.log('Add zone clicked');
               }}
               onEditZone={(zoneId) => {
-                console.log('Edit zone:', zoneId, '- TODO: Implement zone edit modal');
+                console.log('Edit zone:', zoneId);
               }}
               onDeleteZone={(zoneId) => {
-                console.log('Delete zone:', zoneId, '- TODO: Implement zone deletion confirmation');
+                console.log('Delete zone:', zoneId);
               }}
+              onSaveZone={addZone}
+              onDeleteZoneById={deleteZone}
             />
           )}
 
           {activeView === 'responders' && (
             <RespondersView />
+          )}
+
+          {activeView === 'patrol' && (
+            <PatrolView />
           )}
 
           {activeView === 'settings' && (
@@ -334,6 +348,55 @@ export const DashboardPage: React.FC = () => {
           <div className="mb-6">
             <div className="text-[10px] uppercase font-bold text-zinc-500 mb-3 tracking-widest px-1">System Status</div>
             <SuccessAlert message="System Optimal" />
+          </div>
+
+          {/* Active Zones Section */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Active Zones</div>
+              <button
+                onClick={() => setActiveView('zones')}
+                className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
+                + Add Zone
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {/* Red Zones */}
+              {zones.filter(z => z.severity === 'HIGH').map((zone, i) => (
+                <div key={`red-${zone.id || i}`} className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 hover:bg-red-500/15 transition-colors cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-xs font-medium text-red-400 truncate flex-1">{zone.location}</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mt-1 pl-4">{zone.type}</div>
+                </div>
+              ))}
+
+              {/* Yellow Zones */}
+              {zones.filter(z => z.severity === 'MODERATE').map((zone, i) => (
+                <div key={`yellow-${zone.id || i}`} className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 hover:bg-yellow-500/15 transition-colors cursor-pointer group">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                    <span className="text-xs font-medium text-yellow-400 truncate flex-1">{zone.location}</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mt-1 pl-4">{zone.type}</div>
+                </div>
+              ))}
+
+              {/* Zone Stats */}
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-2 text-center">
+                  <div className="text-lg font-bold text-red-400">{zones.filter(z => z.severity === 'HIGH').length}</div>
+                  <div className="text-[9px] text-zinc-500 uppercase">Red Zones</div>
+                </div>
+                <div className="bg-yellow-500/5 border border-yellow-500/10 rounded-lg p-2 text-center">
+                  <div className="text-lg font-bold text-yellow-400">{zones.filter(z => z.severity === 'MODERATE').length}</div>
+                  <div className="text-[9px] text-zinc-500 uppercase">Yellow Zones</div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div>

@@ -11,13 +11,17 @@ interface ZoneManagementProps {
     onAddZone?: () => void;
     onEditZone?: (zoneId: number) => void;
     onDeleteZone?: (zoneId: number) => void;
+    onSaveZone?: (zoneData: any) => Promise<void>;
+    onDeleteZoneById?: (zoneId: string | number) => Promise<void>; // Supabase delete
 }
 
 export const ZoneManagement: React.FC<ZoneManagementProps> = ({
     zones,
     onAddZone,
     onEditZone,
-    onDeleteZone
+    onDeleteZone,
+    onSaveZone,
+    onDeleteZoneById
 }) => {
     const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
     const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
@@ -63,17 +67,25 @@ export const ZoneManagement: React.FC<ZoneManagementProps> = ({
         setIsDeleteModalOpen(true);
     };
 
-    const handleSaveZone = (zoneData: Partial<Zone>) => {
-        console.log('Saving zone:', zoneData);
-        // TODO: Implement actual save logic (API call)
+    const handleSaveZone = async (zoneData: Partial<Zone>) => {
+        console.log('Saving zone to Supabase:', zoneData);
+        if (onSaveZone) {
+            await onSaveZone(zoneData);
+        }
         setIsFormModalOpen(false);
     };
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (zoneToDelete) {
             console.log('Deleting zone:', zoneToDelete.id);
-            // TODO: Implement actual delete logic (API call)
-            onDeleteZone?.(zoneToDelete.id);
+            if (onDeleteZoneById) {
+                // Supabase delete
+                await onDeleteZoneById(zoneToDelete.id);
+                // Also call the original prop to update UI state if needed
+                onDeleteZone?.(zoneToDelete.id);
+            } else {
+                onDeleteZone?.(zoneToDelete.id);
+            }
         }
         setIsDeleteModalOpen(false);
         setZoneToDelete(null);
@@ -172,8 +184,8 @@ export const ZoneManagement: React.FC<ZoneManagementProps> = ({
                         </div>
                     </div>
 
-                    {/* Zone List */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {/* Zone List - Scrollable */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 custom-scrollbar">
                         {/* RED ZONES */}
                         {redZones.length > 0 && (
                             <div>

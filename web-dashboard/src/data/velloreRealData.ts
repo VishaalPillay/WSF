@@ -347,3 +347,46 @@ export const REAL_USER_PROFILES = [
         sosActivations: 0
     }
 ];
+
+// Mock Patrol Routes (Lines on Map)
+export const PATROL_ROUTES = [
+    {
+        id: 'route-001',
+        name: 'Katpadi Station Patrol',
+        officer: 'Officer Nikhil Kumar',
+        color: '#06B6D4', // Cyan
+        coordinates: [
+            [79.1551, 12.9724], // Start at Katpadi Station
+            [79.1559, 12.9700],
+            [79.1570, 12.9680],
+            [79.1545, 12.9692],
+            [79.1551, 12.9724]  // Back to start
+        ]
+    },
+    {
+        id: 'route-002',
+        name: 'VIT Campus Patrol',
+        officer: 'Officer Ravi Singh',
+        color: '#8B5CF6', // Purple
+        coordinates: [
+            [79.1559, 12.9692], // VIT Main Gate
+            [79.1580, 12.9700],
+            [79.1600, 12.9680],
+            [79.1580, 12.9660],
+            [79.1559, 12.9692]  // Back to start
+        ]
+    },
+    {
+        id: 'route-003',
+        name: 'Green Circle Patrol',
+        officer: 'Officer Priya Menon',
+        color: '#F59E0B', // Amber
+        coordinates: [
+            [79.1570, 12.9680], // Green Circle
+            [79.1550, 12.9660],
+            [79.1530, 12.9680],
+            [79.1550, 12.9700],
+            [79.1570, 12.9680]  // Back to start
+        ]
+    }
+];
