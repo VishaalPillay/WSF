@@ -32,7 +32,7 @@
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>SENTRA needs background location to monitor safety while your phone is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SENTRA needs your location to route you through safe zones.</string>
+	<string>Sentra needs your location to navigate you through safe zones.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>SENTRA listens for high-stress audio triggers like screaming.</string>
     
@@ -57,5 +57,7 @@
 	</array>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
+	<key>MBXAccessToken</key>
+	<string>pk.eyJ1IjoibmlraGlsMjEwMjA2IiwiYSI6ImNta2U0NG0zdTAzMzUzZXMwZjZwbXFzZ3kifQ.fgjpDhGp_9bUapwaLEvtsg</string>
 </dict>
 </plist>
