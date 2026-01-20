@@ -18,12 +18,17 @@ dependencies:
   permission_handler: ^11.3.0
   
   # Helpers
-  flutter_polyline_points: ^2.0.0  # <--- ADD THIS for decoding backend routes
+  flutter_polyline_points: ^2.0.0
   
   # UI Components
   google_fonts: ^6.1.0
   sliding_up_panel: ^2.0.0+1
   cupertino_icons: ^1.0.6
+  
+  # ADD THIS:
+  url_launcher: ^6.2.0
+  # ADD THIS:
+  background_sms: ^0.0.4
 
 dev_dependencies:
   flutter_test:

@@ -9,6 +9,8 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:mobile_app/services/api_service.dart';
 import 'package:mobile_app/services/mapbox_service.dart';
 import 'dart:async';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:background_sms/background_sms.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +19,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   MapboxMap? mapboxMap;
   PolygonAnnotationManager? _polygonManager;
   PolylineAnnotationManager? _polylineManager;
@@ -70,7 +72,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _requestPermissions() async {
-    await [Permission.location, Permission.microphone].request();
+    await [
+      Permission.location,
+      Permission.microphone,
+      Permission.sms,
+    ].request();
   }
 
   _onMapCreated(MapboxMap mapboxMap) {
@@ -90,14 +96,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- 1. DANGER ZONES (UPDATED FOR SIMULATION) ---
   List<Position> _createGeoJSONCircle(
-      double centerLat, double centerLng, double radiusInMeters) {
+    double centerLat,
+    double centerLng,
+    double radiusInMeters,
+  ) {
     int points = 64;
     List<Position> coordinates = [];
     double earthRadius = 6371000.0;
     for (int i = 0; i < points; i++) {
       double angle = (i * 360 / points) * (math.pi / 180);
       double latOffset = (radiusInMeters / earthRadius) * (180 / math.pi);
-      double lngOffset = (radiusInMeters / earthRadius) *
+      double lngOffset =
+          (radiusInMeters / earthRadius) *
           (180 / math.pi) /
           math.cos(centerLat * math.pi / 180);
       double pLat = centerLat + (latOffset * math.sin(angle));
@@ -117,8 +127,9 @@ class _HomeScreenState extends State<HomeScreen> {
     // Clear existing zones first to avoid duplicates
     await _polygonManager?.deleteAll();
 
-    final zones =
-        await _apiService.getDangerZones(simulatedHour: simulatedTime);
+    final zones = await _apiService.getDangerZones(
+      simulatedHour: simulatedTime,
+    );
 
     if (zones.isEmpty) return;
 
@@ -133,14 +144,106 @@ class _HomeScreenState extends State<HomeScreen> {
             ? Colors.amber.withOpacity(0.8).value
             : Colors.red.withOpacity(0.8).value;
         final geometry = _createGeoJSONCircle(zone['lat'], zone['lng'], 300);
-        polygonOptions.add(PolygonAnnotationOptions(
-          geometry: Polygon(coordinates: [geometry]),
-          fillColor: activeFillColor,
-          fillOutlineColor: activeStrokeColor,
-        ));
+        polygonOptions.add(
+          PolygonAnnotationOptions(
+            geometry: Polygon(coordinates: [geometry]),
+            fillColor: activeFillColor,
+            fillOutlineColor: activeStrokeColor,
+          ),
+        );
       }
     }
     await _polygonManager?.createMulti(polygonOptions);
+  }
+
+  // --- SOS LOGIC ---
+  // --------------------------------------------------------------------------
+  // 🔥🔥🔥 NEW SOS IMPLEMENTATION STARTS HERE 🔥🔥🔥
+  // --------------------------------------------------------------------------
+
+  /// Starts the SOS sequence: Countdown UI -> Automatic SMS
+  void _handleSosSequence() async {
+    // 1. Show the Countdown Dialog
+    bool shouldSend =
+        await showDialog(
+          context: context,
+          barrierDismissible: false, // User must explicitly cancel
+          builder: (context) => const SosCountdownDialog(),
+        ) ??
+        false;
+
+    // 2. If Dialog returns TRUE (timer finished), send the SMS
+    if (shouldSend) {
+      _sendAutomaticSOS();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("SOS Cancelled"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  /// Sends the SMS automatically using background_sms
+  Future<void> _sendAutomaticSOS() async {
+    const String emergencyNumber = "+919940903891";
+    final String message =
+        "SOS! I need help. My current location is: https://maps.google.com/?q=$_startLat,$_startLng";
+
+    // Show sending feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Sending Emergency Signal..."),
+        backgroundColor: Colors.redAccent,
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      // Check permission status
+      var status = await Permission.sms.status;
+      if (!status.isGranted) {
+        status = await Permission.sms.request();
+      }
+
+      if (status.isGranted) {
+        // Attempt Background Send
+        SmsStatus result = await BackgroundSms.sendMessage(
+          phoneNumber: emergencyNumber,
+          message: message,
+        );
+
+        if (result == SmsStatus.sent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("SOS SENT SUCCESSFULLY!"),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          _fallbackToManualSms(emergencyNumber, message);
+        }
+      } else {
+        // Fallback if permission denied
+        _fallbackToManualSms(emergencyNumber, message);
+      }
+    } catch (e) {
+      print("Background SMS failed: $e");
+      _fallbackToManualSms(emergencyNumber, message);
+    }
+  }
+
+  /// Fallback: Opens the SMS app if background sending fails (or on iOS)
+  void _fallbackToManualSms(String number, String message) async {
+    final Uri smsUri = Uri(
+      scheme: 'sms',
+      path: number,
+      queryParameters: <String, String>{'body': message},
+    );
+    if (await canLaunchUrl(smsUri)) {
+      await launchUrl(smsUri);
+    }
   }
 
   // --- 2. ROUTE LOGIC ---
@@ -212,16 +315,21 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchAndDrawRoute(double endLat, double endLng) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-          content: Text("Calculating safest path..."),
-          duration: Duration(seconds: 1)),
+        content: Text("Calculating safest path..."),
+        duration: Duration(seconds: 1),
+      ),
     );
     await _polylineManager?.deleteAll();
     await _pointManager?.deleteAll();
 
     await _pointManager?.deleteAll();
 
-    final result =
-        await _apiService.getSafeRoute(_startLat, _startLng, endLat, endLng);
+    final result = await _apiService.getSafeRoute(
+      _startLat,
+      _startLng,
+      endLat,
+      endLng,
+    );
 
     if (result != null && result['status'] == 'success') {
       final route = result['recommended_route'];
@@ -230,23 +338,29 @@ class _HomeScreenState extends State<HomeScreen> {
       final double duration = route['duration'] / 60;
 
       PolylinePoints polylinePoints = PolylinePoints();
-      List<PointLatLng> decodedPoints =
-          polylinePoints.decodePolyline(encodedPolyline);
-      List<Position> routeGeometry =
-          decodedPoints.map((p) => Position(p.longitude, p.latitude)).toList();
+      List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(
+        encodedPolyline,
+      );
+      List<Position> routeGeometry = decodedPoints
+          .map((p) => Position(p.longitude, p.latitude))
+          .toList();
 
-      _polylineManager?.create(PolylineAnnotationOptions(
-        geometry: LineString(coordinates: routeGeometry),
-        lineColor: Colors.blueAccent.value,
-        lineWidth: 6.0,
-        lineJoin: LineJoin.ROUND,
-      ));
+      _polylineManager?.create(
+        PolylineAnnotationOptions(
+          geometry: LineString(coordinates: routeGeometry),
+          lineColor: Colors.blueAccent.value,
+          lineWidth: 6.0,
+          lineJoin: LineJoin.ROUND,
+        ),
+      );
 
-      _pointManager?.create(PointAnnotationOptions(
-        geometry: Point(coordinates: Position(endLng, endLat)),
-        iconImage: "marker-15",
-        iconSize: 1.5,
-      ));
+      _pointManager?.create(
+        PointAnnotationOptions(
+          geometry: Point(coordinates: Position(endLng, endLat)),
+          iconImage: "marker-15",
+          iconSize: 1.5,
+        ),
+      );
 
       setState(() {
         _isRouteActive = true;
@@ -254,9 +368,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _durationMin = duration;
       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Could not find a route!")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Could not find a route!")));
     }
   }
 
@@ -269,7 +383,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // 1. Switch Mapbox Style
     if (mapboxMap != null) {
       mapboxMap!.loadStyleURI(
-          _isNightMode ? MapboxStyles.DARK : MapboxStyles.MAPBOX_STREETS);
+        _isNightMode ? MapboxStyles.DARK : MapboxStyles.MAPBOX_STREETS,
+      );
 
       // 2. Re-load zones with the NEW simulated time
       // Giving a slight delay to allow style to load
@@ -367,19 +482,27 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         const Icon(Icons.search, color: Color(0xFFFF4081), size: 24),
         const SizedBox(width: 15),
-        Text("Where to?",
-            style: GoogleFonts.poppins(
-                color: Colors.black87,
-                fontWeight: FontWeight.w600,
-                fontSize: 15)),
+        Text(
+          "Where to?",
+          style: GoogleFonts.poppins(
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
         const Spacer(),
         Container(
           padding: const EdgeInsets.all(5),
-          decoration:
-              BoxDecoration(color: Colors.grey[100], shape: BoxShape.circle),
-          child: const Icon(Icons.access_time_filled,
-              size: 18, color: Colors.grey),
-        )
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.access_time_filled,
+            size: 18,
+            color: Colors.grey,
+          ),
+        ),
       ],
     );
   }
@@ -399,8 +522,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 _destinationFocus.unfocus();
                 _suggestions = [];
               },
-              child:
-                  const Icon(Icons.arrow_back, color: Colors.black87, size: 20),
+              child: const Icon(
+                Icons.arrow_back,
+                color: Colors.black87,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 10),
             Column(
@@ -428,7 +554,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w500, fontSize: 14),
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
               ),
             ),
           ],
@@ -437,8 +565,11 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           children: [
             const SizedBox(width: 30),
-            const Icon(Icons.location_on_rounded,
-                color: Color(0xFFFF4081), size: 16),
+            const Icon(
+              Icons.location_on_rounded,
+              color: Color(0xFFFF4081),
+              size: 16,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: TextField(
@@ -454,7 +585,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600, fontSize: 14),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
               ),
             ),
             IconButton(
@@ -482,7 +615,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_suggestions.isNotEmpty) ...[
           const Divider(),
           _buildSuggestionsList(),
-        ]
+        ],
       ],
     );
   }
@@ -494,8 +627,11 @@ class _HomeScreenState extends State<HomeScreen> {
         return ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.location_on_outlined,
-              size: 20, color: Colors.grey),
+          leading: const Icon(
+            Icons.location_on_outlined,
+            size: 20,
+            color: Colors.grey,
+          ),
           title: Text(
             suggestion['place_name'] ?? "",
             maxLines: 1,
@@ -529,8 +665,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24)),
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
               ),
               padding: const EdgeInsets.all(20),
               child: Row(
@@ -543,33 +680,41 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         _riskScore > 50 ? "CAUTION ADVISED" : "SAFEST ROUTE",
                         style: GoogleFonts.poppins(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2),
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
                       ),
                       Text(
                         "${_durationMin.toStringAsFixed(0)} mins • Risk: $_riskScore%",
                         style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold),
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
-                  const Icon(Icons.directions_walk,
-                      color: Colors.white, size: 40),
+                  const Icon(
+                    Icons.directions_walk,
+                    color: Colors.white,
+                    size: 40,
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
             ListTile(
               leading: const Icon(Icons.info_outline, color: Colors.blue),
-              title: Text("Route Details",
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+              title: Text(
+                "Route Details",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
               subtitle: Text(
-                  "This path avoids ${_riskScore > 0 ? 'detected high-crime zones' : 'all known danger zones'}.",
-                  style: GoogleFonts.poppins(fontSize: 12)),
+                "This path avoids ${_riskScore > 0 ? 'detected high-crime zones' : 'all known danger zones'}.",
+                style: GoogleFonts.poppins(fontSize: 12),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(20),
@@ -587,13 +732,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   backgroundColor: Colors.black87,
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                child: Text("Clear Route",
-                    style: GoogleFonts.poppins(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
+                child: Text(
+                  "Clear Route",
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            )
+            ),
           ],
         ),
       );
@@ -616,7 +766,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 end: Alignment.bottomRight,
               ),
               borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
             child: Row(
@@ -628,27 +780,39 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.shield_moon,
-                            color: Colors.white, size: 18),
+                        const Icon(
+                          Icons.shield_moon,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                         const SizedBox(width: 8),
-                        Text("SENTRA ACTIVE",
-                            style: GoogleFonts.poppins(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                letterSpacing: 1.5,
-                                fontWeight: FontWeight.w600)),
+                        Text(
+                          "SENTRA ACTIVE",
+                          style: GoogleFonts.poppins(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            letterSpacing: 1.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text("You are in a Safe Zone",
-                        style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold)),
+                    Text(
+                      "You are in a Safe Zone",
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
-                const Icon(Icons.battery_saver,
-                    color: Colors.white70, size: 28),
+                const Icon(
+                  Icons.battery_saver,
+                  color: Colors.white70,
+                  size: 28,
+                ),
               ],
             ),
           ),
@@ -661,11 +825,14 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Simulation Mode",
-                    style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey[600])),
+                Text(
+                  "Simulation Mode",
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[600],
+                  ),
+                ),
                 const SizedBox(height: 10),
                 GestureDetector(
                   onTap: _toggleSimulationMode,
@@ -673,14 +840,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: double.infinity,
                     height: 55,
                     decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(30),
-                        color: Colors.grey[200],
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4))
-                        ]),
+                      borderRadius: BorderRadius.circular(30),
+                      color: Colors.grey[200],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
                     child: Stack(
                       children: [
                         // Background Text Labels
@@ -689,24 +858,30 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Expanded(
                               child: Center(
-                                child: Text("Day Time",
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: !_isNightMode
-                                            ? Colors.black54
-                                            : Colors.grey)),
+                                child: Text(
+                                  "Day Time",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: !_isNightMode
+                                        ? Colors.black54
+                                        : Colors.grey,
+                                  ),
+                                ),
                               ),
                             ),
                             Expanded(
                               child: Center(
-                                child: Text("Night Time",
-                                    style: GoogleFonts.poppins(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: _isNightMode
-                                            ? Colors.black54
-                                            : Colors.grey)),
+                                child: Text(
+                                  "Night Time",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: _isNightMode
+                                        ? Colors.black54
+                                        : Colors.grey,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -724,45 +899,49 @@ class _HomeScreenState extends State<HomeScreen> {
                             height: 45,
                             margin: const EdgeInsets.symmetric(horizontal: 5),
                             decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: _isNightMode
-                                      ? [
-                                          const Color(0xFF2b5876),
-                                          const Color(0xFF4e4376)
-                                        ] // Deep Purple/Blue
-                                      : [
-                                          const Color(0xFFF2994A),
-                                          const Color(0xFFF2C94C)
-                                        ], // Orange/Yellow
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
+                              gradient: LinearGradient(
+                                colors: _isNightMode
+                                    ? [
+                                        const Color(0xFF2b5876),
+                                        const Color(0xFF4e4376),
+                                      ] // Deep Purple/Blue
+                                    : [
+                                        const Color(0xFFF2994A),
+                                        const Color(0xFFF2C94C),
+                                      ], // Orange/Yellow
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                              borderRadius: BorderRadius.circular(25),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _isNightMode
+                                      ? Colors.purple.withOpacity(0.3)
+                                      : Colors.orange.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
                                 ),
-                                borderRadius: BorderRadius.circular(25),
-                                boxShadow: [
-                                  BoxShadow(
-                                      color: _isNightMode
-                                          ? Colors.purple.withOpacity(0.3)
-                                          : Colors.orange.withOpacity(0.3),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2))
-                                ]),
+                              ],
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                    _isNightMode
-                                        ? Icons.nights_stay_rounded
-                                        : Icons.wb_sunny_rounded,
-                                    color: Colors.white,
-                                    size: 20),
+                                  _isNightMode
+                                      ? Icons.nights_stay_rounded
+                                      : Icons.wb_sunny_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   _isNightMode ? "Night View" : "Day View",
                                   style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13),
-                                )
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -782,19 +961,24 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Safe Havens Nearby",
-                    style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87)),
+                Text(
+                  "Safe Havens Nearby",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 15),
                 _buildSafePlaceTile("Katpadi Station", "0.5 km • Open 24x7"),
                 _buildSafePlaceTile(
-                    "VIT Main Gate", "1.2 km • Security Present"),
+                  "VIT Main Gate",
+                  "1.2 km • Security Present",
+                ),
                 const SizedBox(height: 20),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
@@ -802,12 +986,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNavBar() {
     return Container(
-      decoration: BoxDecoration(boxShadow: [
-        BoxShadow(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
             color: Colors.black.withOpacity(0.05),
             blurRadius: 20,
-            offset: const Offset(0, -5))
-      ]),
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
       child: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
@@ -815,17 +1002,30 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedItemColor: const Color(0xFFFF4081),
         unselectedItemColor: Colors.grey[400],
         showUnselectedLabels: true,
-        selectedLabelStyle:
-            GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w600),
+        selectedLabelStyle: GoogleFonts.poppins(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
         unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+        onTap: (index) {
+          if (index == 1) {
+            // TRIGGER THE NEW SOS SEQUENCE
+            _handleSosSequence();
+          }
+        },
         items: const [
           BottomNavigationBarItem(
-              icon: Icon(Icons.home_rounded, size: 28), label: "Home"),
+            icon: Icon(Icons.home_rounded, size: 28),
+            label: "Home",
+          ),
           BottomNavigationBarItem(
-              icon: Icon(Icons.emergency_rounded, color: Colors.red, size: 36),
-              label: "SOS"),
+            icon: Icon(Icons.emergency_rounded, color: Colors.red, size: 36),
+            label: "SOS",
+          ),
           BottomNavigationBarItem(
-              icon: Icon(Icons.person_rounded, size: 28), label: "Profile"),
+            icon: Icon(Icons.person_rounded, size: 28),
+            label: "Profile",
+          ),
         ],
       ),
     );
@@ -836,40 +1036,234 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 2))
-          ]),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-                color: Colors.green[50],
-                borderRadius: BorderRadius.circular(10)),
-            child:
-                Icon(Icons.store_rounded, color: Colors.green[700], size: 22),
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.store_rounded,
+              color: Colors.green[700],
+              size: 22,
+            ),
           ),
           const SizedBox(width: 15),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title,
-                  style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600, fontSize: 14)),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(subtitle,
-                  style: GoogleFonts.poppins(
-                      fontSize: 12, color: Colors.grey[600])),
+              Text(
+                subtitle,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
             ],
           ),
           const Spacer(),
           const Icon(Icons.directions_outlined, color: Colors.grey, size: 20),
         ],
+      ),
+    );
+  }
+}
+
+// --------------------------------------------------------------------------
+// 🎨 CUSTOM WIDGET: ANIMATED COUNTDOWN DIALOG
+// --------------------------------------------------------------------------
+class SosCountdownDialog extends StatefulWidget {
+  const SosCountdownDialog({super.key});
+
+  @override
+  State<SosCountdownDialog> createState() => _SosCountdownDialogState();
+}
+
+class _SosCountdownDialogState extends State<SosCountdownDialog>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  int _countdown = 5;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Animation controller for the pulsing effect
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+
+    // Countdown Logic
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        if (_countdown > 1) {
+          _countdown--;
+        } else {
+          _timer?.cancel();
+          Navigator.of(context).pop(true); // Return TRUE to trigger SMS
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false, // Prevent back button dismissal
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ALERT HEADER
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.redAccent,
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withOpacity(0.5),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(
+                    "EMERGENCY ALERT",
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 30),
+
+            // COUNTDOWN CIRCLE
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                // Outer Pulsing Ring
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return Container(
+                      width: 180 + (_controller.value * 20),
+                      height: 180 + (_controller.value * 20),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.red.withOpacity(
+                          0.2 - (_controller.value * 0.1),
+                        ),
+                        border: Border.all(
+                          color: Colors.red.withOpacity(0.5),
+                          width: 1,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                // Progress Indicator
+                SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: CircularProgressIndicator(
+                    value: _countdown / 5,
+                    valueColor: const AlwaysStoppedAnimation(Colors.red),
+                    backgroundColor: Colors.white24,
+                    strokeWidth: 8,
+                  ),
+                ),
+                // Number Text
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "$_countdown",
+                      style: GoogleFonts.poppins(
+                        fontSize: 60,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      "Sending SOS...",
+                      style: GoogleFonts.poppins(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+
+            // CANCEL BUTTON
+            GestureDetector(
+              onTap: () {
+                _timer?.cancel();
+                Navigator.of(context).pop(false); // Return FALSE to cancel
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Center(
+                  child: Text(
+                    "CANCEL REQUEST",
+                    style: GoogleFonts.poppins(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
