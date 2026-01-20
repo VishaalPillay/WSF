@@ -54,7 +54,13 @@ $RECYCLE.BIN/
 **/web-dashboard/node_modules/
 **/web-dashboard/dist/
 **/web-dashboard/build/
+**/web-dashboard/.next/
 **/web-dashboard/.env
+**/web-dashboard/.env*.local
+**/web-dashboard/.env.local
+**/web-dashboard/.env.development.local
+**/web-dashboard/.env.test.local
+**/web-dashboard/.env.production.local
 **/web-dashboard/npm-debug.log*
 **/web-dashboard/yarn-error.log*
 
