@@ -54,9 +54,15 @@ $RECYCLE.BIN/
 **/web-dashboard/node_modules/
 **/web-dashboard/dist/
 **/web-dashboard/build/
+**/web-dashboard/.next/
+**/web-dashboard/out/
 **/web-dashboard/.env
+**/web-dashboard/.env*.local
+**/web-dashboard/*.tsbuildinfo
 **/web-dashboard/npm-debug.log*
 **/web-dashboard/yarn-error.log*
+**/web-dashboard/yarn.lock
+**/web-dashboard/package-lock.json
 
 # =========================
 # IDEs & EDITORS
