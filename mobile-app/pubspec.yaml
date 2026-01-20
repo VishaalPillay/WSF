@@ -11,14 +11,19 @@ dependencies:
     sdk: flutter
   # Networking
   http: ^1.2.0
+  tflite_flutter: ^0.12.1
+  record: ^5.2.0
 
   # Maps & Location
-  mapbox_maps_flutter: ^2.0.0
+  mapbox_maps_flutter: 2.17.0
   geolocator: ^10.1.0
   permission_handler: ^11.3.0
   
   # Helpers
   flutter_polyline_points: ^2.0.0
+
+dependency_overrides:
+  record_linux: ^1.2.0
   
   # UI Components
   google_fonts: ^6.1.0
@@ -37,3 +42,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/sentinel_audio.tflite
+    - assets/labels.txt
