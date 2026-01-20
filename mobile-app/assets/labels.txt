@@ -1,11 +1,12 @@
 Speech
 Child speech, kid speaking
 Conversation
-Argument
-Drama
-Silence
-Scream
+Narration, monologue
+Babbling
+Speech synthesizer
 Shout
+Bellow
+Whoop
 Yell
 Children shouting
 Screaming
@@ -15,19 +16,17 @@ Baby laughter
 Giggle
 Snicker
 Belly laugh
-Chuckling, chortle
+Chuckle, chortle
 Crying, sobbing
 Baby cry, infant cry
 Whimper
-Wail
+Wail, moan
 Sigh
 Singing
 Choir
 Yodeling
 Chant
 Mantra
-Male singing
-Female singing
 Child singing
 Synthetic singing
 Rapping
@@ -73,7 +72,7 @@ Bark
 Yip
 Howl
 Bow-wow
-Growl
+Growling
 Whimper (dog)
 Cat
 Purr
@@ -83,7 +82,7 @@ Caterwaul
 Livestock, farm animals, working animals
 Horse
 Clip-clop
-Neigh
+Neigh, whinny
 Cattle, bovinae
 Moo
 Cowbell
@@ -97,6 +96,7 @@ Chicken, rooster
 Cluck
 Crowing, cock-a-doodle-doo
 Turkey
+Gobble
 Duck
 Quack
 Goose
@@ -118,11 +118,11 @@ Bird flight, flapping wings
 Canidae, dogs, wolves
 Rodents, rats, mice
 Mouse
-Chipmunk
+Patter
 Insect
 Cricket
 Mosquito
-Fly, house fly
+Fly, housefly
 Buzz
 Bee, wasp, etc.
 Frog
@@ -156,6 +156,7 @@ Sampler
 Harpsichord
 Percussion
 Drum kit
+Drum machine
 Drum
 Snare drum
 Rimshot
@@ -165,8 +166,7 @@ Timpani
 Tabla
 Cymbal
 Hi-hat
-Crash cymbal
-Orchestral percussion
+Wood block
 Tambourine
 Rattle (instrument)
 Maraca
@@ -174,6 +174,7 @@ Gong
 Tubular bells
 Mallet percussion
 Marimba, xylophone
+Glockenspiel
 Vibraphone
 Steelpan
 Orchestra
@@ -199,7 +200,7 @@ Bicycle bell
 Tuning fork
 Chime
 Wind chime
-Change ringing
+Change ringing (campanology)
 Harmonica
 Accordion
 Bagpipes
@@ -225,13 +226,72 @@ Country
 Swing music
 Bluegrass
 Funk
-Disco
+Folk music
 Middle Eastern music
 Jazz
+Disco
+Classical music
+Opera
+Electronic music
+House music
+Techno
+Dubstep
+Drum and bass
+Electronica
+Electronic dance music
+Ambient music
+Trance music
+Music of Latin America
 Salsa music
+Flamenco
+Blues
+Music for children
+New-age music
+Vocal music
+A capella
+Music of Africa
+Afrobeat
+Christian music
+Gospel music
+Music of Asia
+Carnatic music
+Music of Bollywood
 Ska
 Traditional music
-Zilla
+Independent music
+Song
+Background music
+Theme music
+Jingle (music)
+Soundtrack music
+Lullaby
+Video game music
+Christmas music
+Dance music
+Wedding music
+Happy music
+Sad music
+Tender music
+Exciting music
+Angry music
+Scary music
+Wind
+Rustling leaves
+Wind noise (microphone)
+Thunderstorm
+Thunder
+Water
+Rain
+Raindrop
+Rain on surface
+Stream
+Waterfall
+Ocean
+Waves, surf
+Steam
+Gurgling
+Fire
+Crackle
 Vehicle
 Boat, Water vehicle
 Sailboat, sailing ship
@@ -252,6 +312,7 @@ Truck
 Air brake
 Air horn, truck horn
 Reversing beeps
+Ice cream truck, ice cream van
 Bus
 Emergency vehicle
 Police car (siren)
@@ -276,14 +337,15 @@ Bicycle
 Skateboard
 Engine
 Light engine (high frequency)
-Dental drill
+Dental drill, dentist's drill
 Lawn mower
 Chainsaw
 Medium engine (mid frequency)
 Heavy engine (low frequency)
 Engine knocking
+Engine starting
 Idling
-Accelerating, revving
+Accelerating, revving, vroom
 Door
 Doorbell
 Ding-dong
@@ -318,25 +380,36 @@ Typing
 Typewriter
 Computer keyboard
 Writing
-Paper
-Ripping
-Crumpling, crinkling
+Alarm
+Telephone
+Telephone bell ringing
+Ringtone
+Telephone dialing, DTMF
+Dial tone
+Busy signal
+Alarm clock
+Siren
+Civil defense siren
+Buzzer
+Smoke detector, smoke alarm
+Fire alarm
+Foghorn
+Whistle
+Steam whistle
 Mechanisms
 Ratchet, pawl
 Clock
 Tick
 Tick-tock
-Alarm clock
+Gears
+Pulleys
+Sewing machine
 Mechanical fan
 Air conditioning
-Hum
-Mains hum
-Static
-Distortion
-Crackling
+Cash register
 Printer
 Camera
-Mechanics
+Single-lens reflex camera
 Tools
 Hammer
 Jackhammer
@@ -371,34 +444,74 @@ Drip
 Pour
 Trickle, dribble
 Gush
-Mud
+Fill (with liquid)
+Spray
+Pump (liquid)
+Stir
 Boiling
-Steam
-Hiss
-Train
-Ocean
-Waves, surf
-Stream
-Underground water
-Waterfall
-Rain
-Raindrop
-Rain on surface
-Hail
-Thunderstorm
-Thunder
-Wind
-Rustling leaves
-Howl (wind)
+Sonar
+Arrow
+Whoosh, swoosh, swish
+Thump, thud
+Thunk
+Electronic tuner
+Effects unit
+Chorus effect
+Basketball bounce
+Bang
+Slap, smack
+Whack, thwack
+Smash, crash
+Breaking
+Bouncing
+Whip
+Flap
+Scratch
+Scrape
+Rub
+Roll
+Crushing
+Crumpling, crinkling
+Tearing
+Beep, bleep
+Ping
+Ding
+Clang
+Squeal
+Creak
+Rustle
+Whir
+Clatter
+Sizzle
+Clicking
+Clickety-clack
+Rumble
+Plop
+Jingle, tinkle
+Hum
+Zing
+Boing
+Crunch
+Silence
+Sine wave
+Harmonic
+Chirp tone
+Sound effect
+Pulse
 Inside, small room
-Inside, large room, hall
+Inside, large room or hall
 Inside, public space
-Outside, urban, manmade
-Outside, rural, natural
-Outside, natural
+Outside, urban or manmade
+Outside, rural or natural
 Reverberation
 Echo
 Noise
+Environmental noise
+Static
+Mains hum
+Distortion
+Sidetone
+Cacophony
 White noise
 Pink noise
 Throbbing
