@@ -7,6 +7,8 @@ import 'package:sliding_up_panel/sliding_up_panel.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:mobile_app/services/api_service.dart';
+import 'package:mobile_app/services/mapbox_service.dart';
+import 'dart:async';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,18 +24,31 @@ class _HomeScreenState extends State<HomeScreen> {
   PointAnnotationManager? _pointManager;
 
   final ApiService _apiService = ApiService();
+  final MapboxService _mapboxService = MapboxService();
 
   // Text Controllers
   final TextEditingController _startController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
 
-  // VIT Vellore Coordinates
-  final double startLat = 12.9692;
-  final double startLng = 79.1559;
+  // Focus Nodes for Autocomplete
+  final FocusNode _startFocus = FocusNode();
+  final FocusNode _destinationFocus = FocusNode();
+  Timer? _debounce;
+
+  // Coordinates (Mutable now)
+  double _startLat = 12.9692; // Default: VIT
+  double _startLng = 79.1559;
+  double? _destLat;
+  double? _destLng;
+
+  // Suggestions State
+  List<Map<String, dynamic>> _suggestions = [];
+  bool _isSearching = false;
 
   // State Variables
   bool _isRouteActive = false;
-  bool _isInputExpanded = false; // Controls the animation state
+  bool _isInputExpanded = false;
+  bool _isNightMode = false; // Controls Day/Night Simulation
   int _riskScore = 0;
   double _durationMin = 0;
 
@@ -48,6 +63,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _startController.dispose();
     _destinationController.dispose();
+    _startFocus.dispose();
+    _destinationFocus.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -70,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // --- 1. DANGER ZONES ---
+  // --- 1. DANGER ZONES (UPDATED FOR SIMULATION) ---
   List<Position> _createGeoJSONCircle(
       double centerLat, double centerLng, double radiusInMeters) {
     int points = 64;
@@ -91,8 +109,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadDangerZones() async {
-    final zones = await _apiService.getDangerZones();
+    // 🔥 SIMULATION LOGIC:
+    // If Night Mode is ON -> Request data for 22:00 (10 PM)
+    // If Day Mode is ON   -> Request data for 10:00 (10 AM)
+    int simulatedTime = _isNightMode ? 22 : 10;
+
+    // Clear existing zones first to avoid duplicates
+    await _polygonManager?.deleteAll();
+
+    final zones =
+        await _apiService.getDangerZones(simulatedHour: simulatedTime);
+
     if (zones.isEmpty) return;
+
     List<PolygonAnnotationOptions> polygonOptions = [];
     for (var zone in zones) {
       if (zone['lat'] != null && zone['lng'] != null) {
@@ -123,12 +152,61 @@ class _HomeScreenState extends State<HomeScreen> {
     print("📍 Destination Tapped: $lat, $lng");
 
     setState(() {
-      _isInputExpanded = true; // Auto-expand when map is tapped
+      _isInputExpanded = true;
+      _destLat = lat;
+      _destLng = lng;
       _destinationController.text =
           "${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}";
     });
 
     _fetchAndDrawRoute(lat, lng);
+  }
+
+  // --- AUTOCOMPLETE LOGIC ---
+  void _onSearchChanged(String query, bool isStart) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      if (query.length < 3) {
+        setState(() => _suggestions = []);
+        return;
+      }
+
+      setState(() => _isSearching = true);
+      final results = await _mapboxService.getSuggestions(query);
+      if (mounted) {
+        setState(() {
+          _suggestions = results;
+          _isSearching = false;
+        });
+      }
+    });
+  }
+
+  void _selectSuggestion(Map<String, dynamic> suggestion, bool isStart) {
+    final center = suggestion['center']; // [lng, lat]
+    final double lng = center[0];
+    final double lat = center[1];
+    final String name = suggestion['place_name'];
+
+    setState(() {
+      if (isStart) {
+        _startLat = lat;
+        _startLng = lng;
+        _startController.text = name;
+        _startFocus.unfocus();
+      } else {
+        _destLat = lat;
+        _destLng = lng;
+        _destinationController.text = name;
+        _destinationFocus.unfocus();
+      }
+      _suggestions = []; // Clear suggestions
+    });
+
+    // If both are set, trigger route
+    if (_destLat != null) {
+      _fetchAndDrawRoute(_destLat!, _destLng!);
+    }
   }
 
   Future<void> _fetchAndDrawRoute(double endLat, double endLng) async {
@@ -140,8 +218,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await _polylineManager?.deleteAll();
     await _pointManager?.deleteAll();
 
+    await _pointManager?.deleteAll();
+
     final result =
-        await _apiService.getSafeRoute(startLat, startLng, endLat, endLng);
+        await _apiService.getSafeRoute(_startLat, _startLng, endLat, endLng);
 
     if (result != null && result['status'] == 'success') {
       final route = result['recommended_route'];
@@ -180,12 +260,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // --- 3. THEME & SIMULATION LOGIC ---
+  void _toggleSimulationMode() {
+    setState(() {
+      _isNightMode = !_isNightMode;
+    });
+
+    // 1. Switch Mapbox Style
+    if (mapboxMap != null) {
+      mapboxMap!.loadStyleURI(
+          _isNightMode ? MapboxStyles.DARK : MapboxStyles.MAPBOX_STREETS);
+
+      // 2. Re-load zones with the NEW simulated time
+      // Giving a slight delay to allow style to load
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _loadDangerZones();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SlidingUpPanel(
         maxHeight: 450,
-        minHeight: 150,
+        minHeight: 180,
         parallaxEnabled: true,
         parallaxOffset: .5,
         borderRadius: const BorderRadius.only(
@@ -198,10 +297,12 @@ class _HomeScreenState extends State<HomeScreen> {
             MapWidget(
               key: const ValueKey("mapWidget"),
               cameraOptions: CameraOptions(
-                center: Point(coordinates: Position(startLng, startLat)),
+                center: Point(coordinates: Position(_startLng, _startLat)),
                 zoom: 13.5,
               ),
-              styleUri: MapboxStyles.MAPBOX_STREETS,
+              styleUri: _isNightMode
+                  ? MapboxStyles.DARK
+                  : MapboxStyles.MAPBOX_STREETS,
               onMapCreated: _onMapCreated,
               onTapListener: _handleMapTap,
             ),
@@ -215,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- 3. ANIMATED DYNAMIC SEARCH BAR (UPDATED) ---
+  // --- 4. ANIMATED DYNAMIC SEARCH BAR ---
   Widget _buildAnimatedSearchPanel() {
     return Positioned(
       top: 55,
@@ -230,9 +331,10 @@ class _HomeScreenState extends State<HomeScreen> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOutCubic,
+          // Dynamic height: Base 160 + (Suggestions * 55)
           height: _isInputExpanded
-              ? 160
-              : 55, // Increased slightly to 160 to be safe
+              ? 160 + (_suggestions.length * 55).toDouble()
+              : 55,
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -247,7 +349,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
-            // ✅ FIX: Wrap the child in SingleChildScrollView to prevent overflow errors during animation
             child: SingleChildScrollView(
               physics: const NeverScrollableScrollPhysics(),
               child: _isInputExpanded
@@ -260,7 +361,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Initial State: "Where to?"
   Widget _buildCollapsedInput() {
     return Row(
       key: const ValueKey("collapsed"),
@@ -284,19 +384,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Expanded State: Uber Style Dual Inputs (UPDATED)
   Widget _buildExpandedInputs() {
     return Column(
       key: const ValueKey("expanded"),
       mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center, // Center content vertically
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Row 1: Start Location
         Row(
           children: [
             GestureDetector(
               onTap: () {
                 setState(() => _isInputExpanded = false);
+                _startFocus.unfocus();
+                _destinationFocus.unfocus();
+                _suggestions = [];
               },
               child:
                   const Icon(Icons.arrow_back, color: Colors.black87, size: 20),
@@ -317,6 +418,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: TextField(
                 controller: _startController,
+                focusNode: _startFocus,
+                onChanged: (val) => _onSearchChanged(val, true),
                 decoration: InputDecoration(
                   hintText: "Start Location",
                   hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
@@ -330,10 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-
         Divider(color: Colors.grey[200], height: 20, thickness: 1),
-
-        // Row 2: Destination
         Row(
           children: [
             const SizedBox(width: 30),
@@ -343,6 +443,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: TextField(
                 controller: _destinationController,
+                focusNode: _destinationFocus,
+                onChanged: (val) => _onSearchChanged(val, false),
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: "Where to?",
@@ -355,10 +457,58 @@ class _HomeScreenState extends State<HomeScreen> {
                     fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
-            const Icon(Icons.add, size: 20, color: Colors.grey),
+            IconButton(
+              icon: const Icon(Icons.map_outlined, color: Colors.blue),
+              tooltip: "Choose on Map",
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                setState(() => _isInputExpanded = false);
+                _startFocus.unfocus();
+                _destinationFocus.unfocus();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Tap on the map to select destination"),
+                    duration: Duration(seconds: 2),
+                    backgroundColor: Colors.blue,
+                  ),
+                );
+              },
+            ),
           ],
         ),
+
+        // SUGGESTIONS LIST
+        if (_suggestions.isNotEmpty) ...[
+          const Divider(),
+          _buildSuggestionsList(),
+        ]
       ],
+    );
+  }
+
+  Widget _buildSuggestionsList() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: _suggestions.map((suggestion) {
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.location_on_outlined,
+              size: 20, color: Colors.grey),
+          title: Text(
+            suggestion['place_name'] ?? "",
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          onTap: () {
+            // Determine which field was focused
+            bool isStart = _startFocus.hasFocus;
+            _selectSuggestion(suggestion, isStart);
+          },
+        );
+      }).toList(),
     );
   }
 
@@ -427,7 +577,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () {
                   setState(() {
                     _isRouteActive = false;
-                    _isInputExpanded = false; // Collapse input on clear
+                    _isInputExpanded = false;
                     _destinationController.clear();
                     _polylineManager?.deleteAll();
                     _pointManager?.deleteAll();
@@ -449,21 +599,23 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Default Bottom Sheet Content (unchanged)
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
         children: [
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
             width: double.infinity,
             height: 90,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF2C3E50), Color(0xFF4CA1AF)],
+                colors: _isNightMode
+                    ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
+                    : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.only(
+              borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24), topRight: Radius.circular(24)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
@@ -500,22 +652,131 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 30),
+
+          const SizedBox(height: 25),
+
+          // --- TIME SIMULATION SLIDER (REPLACES SHARE BUTTONS) ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildFeatureIcon(Icons.share_location_rounded, "Share Loc",
-                    Colors.blue[50]!, Colors.blue),
-                _buildFeatureIcon(Icons.local_police_rounded, "Police",
-                    Colors.orange[50]!, Colors.orange),
-                _buildFeatureIcon(Icons.report_problem_rounded, "Place Rating",
-                    Colors.red[50]!, Colors.red),
+                Text("Simulation Mode",
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600])),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: _toggleSimulationMode,
+                  child: Container(
+                    width: double.infinity,
+                    height: 55,
+                    decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        color: Colors.grey[200],
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4))
+                        ]),
+                    child: Stack(
+                      children: [
+                        // Background Text Labels
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Expanded(
+                              child: Center(
+                                child: Text("Day Time",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: !_isNightMode
+                                            ? Colors.black54
+                                            : Colors.grey)),
+                              ),
+                            ),
+                            Expanded(
+                              child: Center(
+                                child: Text("Night Time",
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: _isNightMode
+                                            ? Colors.black54
+                                            : Colors.grey)),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // Animated Slider Thumb
+                        AnimatedAlign(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutBack,
+                          alignment: _isNightMode
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            width: 160,
+                            height: 45,
+                            margin: const EdgeInsets.symmetric(horizontal: 5),
+                            decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: _isNightMode
+                                      ? [
+                                          const Color(0xFF2b5876),
+                                          const Color(0xFF4e4376)
+                                        ] // Deep Purple/Blue
+                                      : [
+                                          const Color(0xFFF2994A),
+                                          const Color(0xFFF2C94C)
+                                        ], // Orange/Yellow
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(25),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: _isNightMode
+                                          ? Colors.purple.withOpacity(0.3)
+                                          : Colors.orange.withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2))
+                                ]),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                    _isNightMode
+                                        ? Icons.nights_stay_rounded
+                                        : Icons.wb_sunny_rounded,
+                                    color: Colors.white,
+                                    size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _isNightMode ? "Night View" : "Day View",
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13),
+                                )
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
+
           const SizedBox(height: 25),
+
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 25),
             child: Column(
@@ -536,27 +797,6 @@ class _HomeScreenState extends State<HomeScreen> {
           )
         ],
       ),
-    );
-  }
-
-  Widget _buildFeatureIcon(
-      IconData icon, String label, Color bg, Color iconColor) {
-    return Column(
-      children: [
-        Container(
-          height: 65,
-          width: 65,
-          decoration:
-              BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-          child: Icon(icon, color: iconColor, size: 30),
-        ),
-        const SizedBox(height: 10),
-        Text(label,
-            style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-                color: Colors.black87)),
-      ],
     );
   }
 
