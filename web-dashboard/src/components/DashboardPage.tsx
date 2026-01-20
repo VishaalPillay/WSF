@@ -146,12 +146,7 @@ export function UserProfile() {
 // --- NAVIGATION ITEMS ---
 const NAV_ITEMS = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-  { id: 'incidents', icon: ShieldAlert, label: 'Incidents' },
-  { id: 'users', icon: Users, label: 'Users' },
-  { id: 'zones', icon: MapPin, label: 'Zones' },
-  { id: 'responders', icon: Radio, label: 'Responders' },
-  { id: 'settings', icon: Settings, label: 'Settings' }
+  { id: 'incidents', icon: ShieldAlert, label: 'Incidents' }
 ];
 
 // --- MAIN PAGE LAYOUT ---
