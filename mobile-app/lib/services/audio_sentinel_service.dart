@@ -120,32 +120,41 @@ class AudioSentinelService {
 
       // Analyze results
       List<double> scores = output[0];
-      double maxScore = 0;
-      int maxIndex = -1;
+
+      // Get Top 5 Predictions
+      List<MapEntry<int, double>> top5 = [];
 
       for (int i = 0; i < scores.length; i++) {
-        if (scores[i] > maxScore) {
-          maxScore = scores[i];
-          maxIndex = i;
-        }
+        top5.add(MapEntry(i, scores[i]));
       }
 
-      if (maxIndex != -1) {
-        String detectedLabel =
-            _labels.length > maxIndex ? _labels[maxIndex] : "Unknown";
+      // Sort Descending
+      top5.sort((a, b) => b.value.compareTo(a.value));
+      top5 = top5.take(5).toList();
 
-        // Debug print to see what phone is hearing
-        if (maxScore > 0.3) {
-          print("🎤 Heard: $detectedLabel ($maxScore)");
-        }
+      // Debug: Print Top 3
+      if (top5.isNotEmpty && top5[0].value > 0.1) {
+        String debugString = top5.take(3).map((e) {
+          String label = _labels.length > e.key ? _labels[e.key] : "Unknown";
+          return "$label (${e.value.toStringAsFixed(2)})";
+        }).join(", ");
+        print("🎤 Hearing: $debugString");
+      }
 
-        // Logic Check
-        if (maxScore > 0.45) {
-          // Confidence Threshold
+      // 🚨 DANGER CHECK (Top 5)
+      for (var entry in top5) {
+        int index = entry.key;
+        double score = entry.value;
+
+        if (score > 0.25) {
+          // ✅ Lowered Threshold (was 0.45)
+          String detectedLabel =
+              _labels.length > index ? _labels[index] : "Unknown";
+
           for (var danger in _dangerKeywords) {
-            if (detectedLabel.contains(danger)) {
-              print("🚨 DANGER MATCH: $detectedLabel");
-              onDangerDetected?.call(detectedLabel, maxScore);
+            if (detectedLabel.toLowerCase().contains(danger.toLowerCase())) {
+              print("🚨 DANGER DETECTED: $detectedLabel ($score)");
+              onDangerDetected?.call(detectedLabel, score);
               return; // Trigger once per chunk
             }
           }
