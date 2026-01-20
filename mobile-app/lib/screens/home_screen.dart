@@ -11,7 +11,9 @@ import 'package:mobile_app/services/mapbox_service.dart';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:background_sms/background_sms.dart';
-import 'package:mobile_app/services/audio_sentinel_service.dart'; // ✅ Added Import
+import 'package:mobile_app/services/audio_sentinel_service.dart';
+import 'package:geolocator/geolocator.dart'
+    as geo; // ✅ Aliased to avoid conflict
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,19 +31,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final MapboxService _mapboxService = MapboxService();
 
-  // ✅ NEW: Audio Sentinel Service
+  // Audio Sentinel Service
   final AudioSentinelService _audioSentinel = AudioSentinelService();
 
   // Text Controllers
   final TextEditingController _startController = TextEditingController();
   final TextEditingController _destinationController = TextEditingController();
 
-  // Focus Nodes for Autocomplete
+  // Focus Nodes
   final FocusNode _startFocus = FocusNode();
   final FocusNode _destinationFocus = FocusNode();
   Timer? _debounce;
 
-  // Coordinates (Mutable now)
+  // Coordinates
   double _startLat = 12.9692; // Default: VIT
   double _startLng = 79.1559;
   double? _destLat;
@@ -54,16 +56,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // State Variables
   bool _isRouteActive = false;
   bool _isInputExpanded = false;
-  bool _isNightMode = false; // Controls Day/Night Simulation
+  bool _isNightMode = false;
   int _riskScore = 0;
   double _durationMin = 0;
+
+  // ✅ NEW: Zone Logic Variables
+  List<dynamic> _activeZones = []; // Stores current zones for calculation
+  String _safetyStatusTitle = "SENTRA ACTIVE";
+  String _safetyStatusSubtitle = "You are in a Safe Zone";
+  List<Color> _safetyGradient = [
+    const Color(0xFF2C3E50),
+    const Color(0xFF4CA1AF)
+  ]; // Default Green/Blue
+  IconData _safetyIcon = Icons.shield_moon;
 
   @override
   void initState() {
     super.initState();
     _startController.text = "Current Location";
     _requestPermissions();
-    _initAudioSentinel(); // ✅ Start Listening Immediately
+    _initAudioSentinel();
+    _startLocationTracking(); // ✅ Start tracking "Blue Dot" logic
   }
 
   @override
@@ -73,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _startFocus.dispose();
     _destinationFocus.dispose();
     _debounce?.cancel();
-    _audioSentinel.stopListening(); // ✅ Stop listening to save battery
+    _audioSentinel.stopListening();
     super.dispose();
   }
 
@@ -85,27 +98,110 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ].request();
   }
 
-  // ✅ NEW: Initialize AI Audio Listener
   void _initAudioSentinel() async {
     await _audioSentinel.initialize();
-
-    // When Danger is Heard (e.g., "Scream"), Trigger the Popup
     _audioSentinel.onDangerDetected = (event, confidence) {
-      print("🚨 UI RECEIVED DANGER ALERT: $event");
-
-      // Ensure we are on the main thread and not already showing a dialog
       if (mounted && ModalRoute.of(context)?.isCurrent == true) {
         _handleSosSequence(triggerReason: event);
       }
     };
-
-    // Auto-start listening
     _audioSentinel.startListening();
-    setState(() {}); // Update UI to show active mic icon
+    setState(() {});
+  }
+
+  // ✅ NEW: Location Tracking & Safety Check Logic
+  void _startLocationTracking() {
+    const geo.LocationSettings locationSettings = geo.LocationSettings(
+      accuracy: geo.LocationAccuracy.high,
+      distanceFilter: 10, // Update every 10 meters
+    );
+
+    geo.Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (geo.Position position) {
+        // Update user location variable if needed
+        _startLat = position.latitude;
+        _startLng = position.longitude;
+
+        // Check if user is inside any danger zone
+        _checkZoneSafety(position);
+      },
+    );
+  }
+
+  // ✅ NEW: Check if "Blue Dot" is inside a Red/Yellow Zone
+  void _checkZoneSafety(geo.Position userPos) {
+    bool inDanger = false;
+    String severity = "LOW";
+
+    // Iterate through loaded zones
+    for (var zone in _activeZones) {
+      if (zone['lat'] != null && zone['lng'] != null) {
+        double zoneLat = zone['lat'];
+        double zoneLng = zone['lng'];
+
+        // Calculate distance between User and Zone Center
+        double distanceInMeters = geo.Geolocator.distanceBetween(
+          userPos.latitude,
+          userPos.longitude,
+          zoneLat,
+          zoneLng,
+        );
+
+        // Check if inside the 300m radius
+        if (distanceInMeters <= 300) {
+          inDanger = true;
+          severity = zone['severity'] ?? "HIGH";
+          break; // Found a zone, break loop
+        }
+      }
+    }
+
+    // Update UI based on result
+    if (mounted) {
+      setState(() {
+        if (inDanger) {
+          if (severity == "MODERATE") {
+            _safetyStatusTitle = "CAUTION ADVISED";
+            _safetyStatusSubtitle = "Entered Moderate Risk Zone";
+            _safetyGradient = [
+              const Color(0xFFF2994A),
+              const Color(0xFFF2C94C)
+            ]; // Orange/Yellow
+            _safetyIcon = Icons.warning_amber_rounded;
+          } else {
+            _safetyStatusTitle = "DANGER DETECTED";
+            _safetyStatusSubtitle = "You are in a High Risk Zone";
+            _safetyGradient = [
+              const Color(0xFFCB2D3E),
+              const Color(0xFFEF473A)
+            ]; // Red
+            _safetyIcon = Icons.report_problem_rounded;
+          }
+        } else {
+          _safetyStatusTitle = "SENTRA ACTIVE";
+          _safetyStatusSubtitle = "You are in a Safe Zone";
+          _safetyGradient = _isNightMode
+              ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
+              : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)];
+          _safetyIcon = Icons.shield_moon;
+        }
+      });
+    }
   }
 
   _onMapCreated(MapboxMap mapboxMap) {
     this.mapboxMap = mapboxMap;
+
+    // ✅ NEW: Enable the Blue Dot (Location Component)
+    mapboxMap.location.updateSettings(
+      LocationComponentSettings(
+        enabled: true,
+        pulsingEnabled: true,
+        pulsingColor: Colors.blueAccent.value,
+        pulsingMaxRadius: 30.0,
+      ),
+    );
+
     // Initialize Annotation Managers
     mapboxMap.annotations.createPolygonAnnotationManager().then((manager) {
       _polygonManager = manager;
@@ -119,7 +215,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  // --- 1. DANGER ZONES (UPDATED FOR SIMULATION) ---
+  // --- DANGER ZONES ---
   List<Position> _createGeoJSONCircle(
     double centerLat,
     double centerLng,
@@ -143,17 +239,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadDangerZones() async {
-    // 🔥 SIMULATION LOGIC:
-    // If Night Mode is ON -> Request data for 22:00 (10 PM)
-    // If Day Mode is ON   -> Request data for 10:00 (10 AM)
     int simulatedTime = _isNightMode ? 22 : 10;
-
-    // Clear existing zones first to avoid duplicates
     await _polygonManager?.deleteAll();
 
     final zones = await _apiService.getDangerZones(
       simulatedHour: simulatedTime,
     );
+
+    // ✅ NEW: Store raw zones for distance calculation
+    _activeZones = zones;
+
+    // Trigger an immediate check in case user is already in one
+    geo.Position? currentPos = await geo.Geolocator.getLastKnownPosition();
+    if (currentPos != null) _checkZoneSafety(currentPos);
 
     if (zones.isEmpty) return;
 
@@ -181,22 +279,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // --- SOS LOGIC ---
-  // --------------------------------------------------------------------------
-  // 🔥🔥🔥 NEW SOS IMPLEMENTATION STARTS HERE 🔥🔥🔥
-  // --------------------------------------------------------------------------
-
-  /// Starts the SOS sequence: Countdown UI -> Automatic SMS
   void _handleSosSequence({String? triggerReason}) async {
-    // 1. Show the Countdown Dialog
     bool shouldSend = await showDialog(
           context: context,
-          barrierDismissible: false, // User must explicitly cancel
+          barrierDismissible: false,
           builder: (context) =>
               SosCountdownDialog(triggerReason: triggerReason),
         ) ??
         false;
 
-    // 2. If Dialog returns TRUE (timer finished), send the SMS
     if (shouldSend) {
       _sendAutomaticSOS();
     } else {
@@ -209,13 +300,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Sends the SMS automatically using background_sms
   Future<void> _sendAutomaticSOS() async {
     const String emergencyNumber = "+919940903891";
+    // ✅ Updated to send actual coordinates if available
     final String message =
         "SOS! I need help. My current location is: https://maps.google.com/?q=$_startLat,$_startLng";
 
-    // Show sending feedback
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text("Sending Emergency Signal..."),
@@ -225,14 +315,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     try {
-      // Check permission status
       var status = await Permission.sms.status;
       if (!status.isGranted) {
         status = await Permission.sms.request();
       }
 
       if (status.isGranted) {
-        // Attempt Background Send
         SmsStatus result = await BackgroundSms.sendMessage(
           phoneNumber: emergencyNumber,
           message: message,
@@ -249,7 +337,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _fallbackToManualSms(emergencyNumber, message);
         }
       } else {
-        // Fallback if permission denied
         _fallbackToManualSms(emergencyNumber, message);
       }
     } catch (e) {
@@ -258,7 +345,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Fallback: Opens the SMS app if background sending fails (or on iOS)
   void _fallbackToManualSms(String number, String message) async {
     final Uri smsUri = Uri(
       scheme: 'sms',
@@ -270,13 +356,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  // --- 2. ROUTE LOGIC ---
+  // --- ROUTE LOGIC ---
   void _handleMapTap(MapContentGestureContext context) {
     final point = context.point;
     final double lat = point.coordinates.lat.toDouble();
     final double lng = point.coordinates.lng.toDouble();
-
-    print("📍 Destination Tapped: $lat, $lng");
 
     setState(() {
       _isInputExpanded = true;
@@ -289,7 +373,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _fetchAndDrawRoute(lat, lng);
   }
 
-  // --- AUTOCOMPLETE LOGIC ---
   void _onSearchChanged(String query, bool isStart) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () async {
@@ -297,7 +380,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         setState(() => _suggestions = []);
         return;
       }
-
       setState(() => _isSearching = true);
       final results = await _mapboxService.getSuggestions(query);
       if (mounted) {
@@ -310,7 +392,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _selectSuggestion(Map<String, dynamic> suggestion, bool isStart) {
-    final center = suggestion['center']; // [lng, lat]
+    final center = suggestion['center'];
     final double lng = center[0];
     final double lat = center[1];
     final String name = suggestion['place_name'];
@@ -327,10 +409,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _destinationController.text = name;
         _destinationFocus.unfocus();
       }
-      _suggestions = []; // Clear suggestions
+      _suggestions = [];
     });
 
-    // If both are set, trigger route
     if (_destLat != null) {
       _fetchAndDrawRoute(_destLat!, _destLng!);
     }
@@ -344,8 +425,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
     await _polylineManager?.deleteAll();
-    await _pointManager?.deleteAll();
-
     await _pointManager?.deleteAll();
 
     final result = await _apiService.getSafeRoute(
@@ -391,26 +470,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _durationMin = duration;
       });
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Could not find a route!")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not find a route!")));
     }
   }
 
-  // --- 3. THEME & SIMULATION LOGIC ---
   void _toggleSimulationMode() {
     setState(() {
       _isNightMode = !_isNightMode;
+      // Reset to safe default until new zones load
+      if (!_activeZones.any((z) => z['severity'] != null)) {
+        _safetyGradient = _isNightMode
+            ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
+            : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)];
+      }
     });
 
-    // 1. Switch Mapbox Style
     if (mapboxMap != null) {
       mapboxMap!.loadStyleURI(
         _isNightMode ? MapboxStyles.DARK : MapboxStyles.MAPBOX_STREETS,
       );
-
-      // 2. Re-load zones with the NEW simulated time
-      // Giving a slight delay to allow style to load
       Future.delayed(const Duration(milliseconds: 300), () {
         _loadDangerZones();
       });
@@ -444,8 +523,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               onMapCreated: _onMapCreated,
               onTapListener: _handleMapTap,
             ),
-
-            // --- ANIMATED SEARCH PANEL ---
             _buildAnimatedSearchPanel(),
           ],
         ),
@@ -454,7 +531,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // --- 4. ANIMATED DYNAMIC SEARCH BAR ---
   Widget _buildAnimatedSearchPanel() {
     return Positioned(
       top: 55,
@@ -462,14 +538,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       right: 15,
       child: GestureDetector(
         onTap: () {
-          if (!_isInputExpanded) {
-            setState(() => _isInputExpanded = true);
-          }
+          if (!_isInputExpanded) setState(() => _isInputExpanded = true);
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOutCubic,
-          // Dynamic height: Base 160 + (Suggestions * 55)
           height: _isInputExpanded
               ? 160 + (_suggestions.length * 55).toDouble()
               : 55,
@@ -514,8 +587,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         const Spacer(),
-
-        // ✅ NEW: AUDIO STATUS INDICATOR
         Container(
           padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
@@ -523,13 +594,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             shape: BoxShape.circle,
           ),
           child: Icon(
-            _audioSentinel.isListening
-                ? Icons.mic
-                : Icons.mic_off, // Status Icon
+            _audioSentinel.isListening ? Icons.mic : Icons.mic_off,
             size: 18,
-            color: _audioSentinel.isListening
-                ? Colors.redAccent
-                : Colors.grey, // Red if listening
+            color: _audioSentinel.isListening ? Colors.redAccent : Colors.grey,
           ),
         ),
       ],
@@ -551,11 +618,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 _destinationFocus.unfocus();
                 _suggestions = [];
               },
-              child: const Icon(
-                Icons.arrow_back,
-                color: Colors.black87,
-                size: 20,
-              ),
+              child:
+                  const Icon(Icons.arrow_back, color: Colors.black87, size: 20),
             ),
             const SizedBox(width: 10),
             Column(
@@ -583,9 +647,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   contentPadding: EdgeInsets.zero,
                 ),
                 style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                ),
+                    fontWeight: FontWeight.w500, fontSize: 14),
               ),
             ),
           ],
@@ -594,11 +656,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Row(
           children: [
             const SizedBox(width: 30),
-            const Icon(
-              Icons.location_on_rounded,
-              color: Color(0xFFFF4081),
-              size: 16,
-            ),
+            const Icon(Icons.location_on_rounded,
+                color: Color(0xFFFF4081), size: 16),
             const SizedBox(width: 10),
             Expanded(
               child: TextField(
@@ -614,9 +673,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   contentPadding: EdgeInsets.zero,
                 ),
                 style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
+                    fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
             IconButton(
@@ -639,8 +696,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
-
-        // SUGGESTIONS LIST
         if (_suggestions.isNotEmpty) ...[
           const Divider(),
           _buildSuggestionsList(),
@@ -656,11 +711,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(
-            Icons.location_on_outlined,
-            size: 20,
-            color: Colors.grey,
-          ),
+          leading: const Icon(Icons.location_on_outlined,
+              size: 20, color: Colors.grey),
           title: Text(
             suggestion['place_name'] ?? "",
             maxLines: 1,
@@ -668,7 +720,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             style: GoogleFonts.poppins(fontSize: 13),
           ),
           onTap: () {
-            // Determine which field was focused
             bool isStart = _startFocus.hasFocus;
             _selectSuggestion(suggestion, isStart);
           },
@@ -725,11 +776,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  const Icon(
-                    Icons.directions_walk,
-                    color: Colors.white,
-                    size: 40,
-                  ),
+                  const Icon(Icons.directions_walk,
+                      color: Colors.white, size: 40),
                 ],
               ),
             ),
@@ -767,9 +815,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: Text(
                   "Clear Route",
                   style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+                      color: Colors.white, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -778,6 +824,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       );
     }
 
+    // ✅ UPDATED: Dynamic Status Panel based on Zone
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
@@ -788,9 +835,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             height: 90,
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: _isNightMode
-                    ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
-                    : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)],
+                colors: _safetyGradient, // ✅ Dynamic Colors
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -809,14 +854,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   children: [
                     Row(
                       children: [
-                        const Icon(
-                          Icons.shield_moon,
-                          color: Colors.white,
-                          size: 18,
-                        ),
+                        Icon(_safetyIcon,
+                            color: Colors.white, size: 18), // ✅ Dynamic Icon
                         const SizedBox(width: 8),
                         Text(
-                          "SENTRA ACTIVE",
+                          _safetyStatusTitle, // ✅ Dynamic Title
                           style: GoogleFonts.poppins(
                             color: Colors.white70,
                             fontSize: 12,
@@ -828,7 +870,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "You are in a Safe Zone",
+                      _safetyStatusSubtitle, // ✅ Dynamic Subtitle
                       style: GoogleFonts.poppins(
                         color: Colors.white,
                         fontSize: 18,
@@ -837,18 +879,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ],
                 ),
-                const Icon(
-                  Icons.battery_saver,
-                  color: Colors.white70,
-                  size: 28,
-                ),
+                const Icon(Icons.battery_saver,
+                    color: Colors.white70, size: 28),
               ],
             ),
           ),
 
           const SizedBox(height: 25),
 
-          // --- TIME SIMULATION SLIDER (REPLACES SHARE BUTTONS) ---
+          // --- TIME SIMULATION SLIDER ---
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
@@ -881,7 +920,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     child: Stack(
                       children: [
-                        // Background Text Labels
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
@@ -915,8 +953,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             ),
                           ],
                         ),
-
-                        // Animated Slider Thumb
                         AnimatedAlign(
                           duration: const Duration(milliseconds: 300),
                           curve: Curves.easeOutBack,
@@ -932,12 +968,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 colors: _isNightMode
                                     ? [
                                         const Color(0xFF2b5876),
-                                        const Color(0xFF4e4376),
-                                      ] // Deep Purple/Blue
+                                        const Color(0xFF4e4376)
+                                      ]
                                     : [
                                         const Color(0xFFF2994A),
-                                        const Color(0xFFF2C94C),
-                                      ], // Orange/Yellow
+                                        const Color(0xFFF2C94C)
+                                      ],
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
                               ),
@@ -1001,9 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 15),
                 _buildSafePlaceTile("Katpadi Station", "0.5 km • Open 24x7"),
                 _buildSafePlaceTile(
-                  "VIT Main Gate",
-                  "1.2 km • Security Present",
-                ),
+                    "VIT Main Gate", "1.2 km • Security Present"),
                 const SizedBox(height: 20),
               ],
             ),
@@ -1038,7 +1072,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
         onTap: (index) {
           if (index == 1) {
-            // TRIGGER THE NEW SOS SEQUENCE
             _handleSosSequence();
           }
         },
@@ -1083,11 +1116,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: Colors.green[50],
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(
-              Icons.store_rounded,
-              color: Colors.green[700],
-              size: 22,
-            ),
+            child:
+                Icon(Icons.store_rounded, color: Colors.green[700], size: 22),
           ),
           const SizedBox(width: 15),
           Column(
@@ -1118,11 +1148,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
-// --------------------------------------------------------------------------
-// 🎨 CUSTOM WIDGET: ANIMATED COUNTDOWN DIALOG (Updated to show reason)
-// --------------------------------------------------------------------------
 class SosCountdownDialog extends StatefulWidget {
-  final String? triggerReason; // ✅ Added Reason
+  final String? triggerReason;
   const SosCountdownDialog({super.key, this.triggerReason});
 
   @override
@@ -1132,26 +1159,24 @@ class SosCountdownDialog extends StatefulWidget {
 class _SosCountdownDialogState extends State<SosCountdownDialog>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  int _countdown = 10; // ✅ Increased to 10 seconds for audio buffer
+  int _countdown = 10;
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    // Animation controller for the pulsing effect
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
 
-    // Countdown Logic
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         if (_countdown > 1) {
           _countdown--;
         } else {
           _timer?.cancel();
-          Navigator.of(context).pop(true); // Return TRUE to trigger SMS
+          Navigator.of(context).pop(true);
         }
       });
     });
@@ -1167,14 +1192,13 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevent back button dismissal
+      canPop: false,
       child: Dialog(
         backgroundColor: Colors.transparent,
         elevation: 0,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ALERT HEADER
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
@@ -1206,8 +1230,6 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                 ],
               ),
             ),
-
-            // ✅ Show detected sound if triggered by AI
             if (widget.triggerReason != null) ...[
               const SizedBox(height: 10),
               Text(
@@ -1215,14 +1237,10 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                 style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
               ),
             ],
-
             const SizedBox(height: 30),
-
-            // COUNTDOWN CIRCLE
             Stack(
               alignment: Alignment.center,
               children: [
-                // Outer Pulsing Ring
                 AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
@@ -1242,18 +1260,16 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                     );
                   },
                 ),
-                // Progress Indicator
                 SizedBox(
                   width: 160,
                   height: 160,
                   child: CircularProgressIndicator(
-                    value: _countdown / 10, // Adjusted for 10s
+                    value: _countdown / 10,
                     valueColor: const AlwaysStoppedAnimation(Colors.red),
                     backgroundColor: Colors.white24,
                     strokeWidth: 8,
                   ),
                 ),
-                // Number Text
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1277,12 +1293,10 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
               ],
             ),
             const SizedBox(height: 40),
-
-            // CANCEL BUTTON
             GestureDetector(
               onTap: () {
                 _timer?.cancel();
-                Navigator.of(context).pop(false); // Return FALSE to cancel
+                Navigator.of(context).pop(false);
               },
               child: Container(
                 width: double.infinity,
