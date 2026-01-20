@@ -11,13 +11,17 @@ interface ZoneManagementProps {
     onAddZone?: () => void;
     onEditZone?: (zoneId: number) => void;
     onDeleteZone?: (zoneId: number) => void;
+    onSaveZone?: (zoneData: any) => Promise<void>;
+    onDeleteZoneById?: (zoneId: string | number) => Promise<void>; // Supabase delete
 }
 
 export const ZoneManagement: React.FC<ZoneManagementProps> = ({
     zones,
     onAddZone,
     onEditZone,
-    onDeleteZone
+    onDeleteZone,
+    onSaveZone,
+    onDeleteZoneById
 }) => {
     const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
     const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
@@ -63,17 +67,25 @@ export const ZoneManagement: React.FC<ZoneManagementProps> = ({
         setIsDeleteModalOpen(true);
     };
 
-    const handleSaveZone = (zoneData: Partial<Zone>) => {
-        console.log('Saving zone:', zoneData);
-        // TODO: Implement actual save logic (API call)
+    const handleSaveZone = async (zoneData: Partial<Zone>) => {
+        console.log('Saving zone to Supabase:', zoneData);
+        if (onSaveZone) {
+            await onSaveZone(zoneData);
+        }
         setIsFormModalOpen(false);
     };
 
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (zoneToDelete) {
             console.log('Deleting zone:', zoneToDelete.id);
-            // TODO: Implement actual delete logic (API call)
-            onDeleteZone?.(zoneToDelete.id);
+            if (onDeleteZoneById) {
+                // Supabase delete
+                await onDeleteZoneById(zoneToDelete.id);
+                // Also call the original prop to update UI state if needed
+                onDeleteZone?.(zoneToDelete.id);
+            } else {
+                onDeleteZone?.(zoneToDelete.id);
+            }
         }
         setIsDeleteModalOpen(false);
         setZoneToDelete(null);
@@ -172,97 +184,14 @@ export const ZoneManagement: React.FC<ZoneManagementProps> = ({
                         </div>
                     </div>
 
-                    {/* Zone List */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                        {/* RED ZONES */}
-                        {redZones.length > 0 && (
-                            <div>
-                                <div className="text-[10px] uppercase font-bold text-red-400 mb-2 tracking-widest px-1 flex items-center gap-2">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    High Risk Zones ({redZones.length})
-                                </div>
-                                {redZones.map(zone => (
-                                    <ZoneCard
-                                        key={zone.id}
-                                        zone={zone}
-                                        isSelected={selectedZone?.id === zone.id}
-                                        onSelect={() => setSelectedZone(zone)}
-                                        onEdit={() => handleEditZone(zone)}
-                                        onDelete={() => handleDeleteZone(zone)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-
-                        {/* YELLOW ZONES */}
-                        {yellowZones.length > 0 && (
-                            <div className={redZones.length > 0 ? 'mt-4' : ''}>
-                                <div className="text-[10px] uppercase font-bold text-yellow-400 mb-2 tracking-widest px-1 flex items-center gap-2">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    Moderate Risk Zones ({yellowZones.length})
-                                </div>
-                                {yellowZones.map(zone => (
-                                    <ZoneCard
-                                        key={zone.id}
-                                        zone={zone}
-                                        isSelected={selectedZone?.id === zone.id}
-                                        onSelect={() => setSelectedZone(zone)}
-                                        onEdit={() => handleEditZone(zone)}
-                                        onDelete={() => handleDeleteZone(zone)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-
-                        {/* LOW ZONES */}
-                        {lowZones.length > 0 && (
-                            <div className={(redZones.length > 0 || yellowZones.length > 0) ? 'mt-4' : ''}>
-                                <div className="text-[10px] uppercase font-bold text-emerald-400 mb-2 tracking-widest px-1 flex items-center gap-2">
-                                    <MapPin className="w-3 h-3" />
-                                    Low Risk Zones ({lowZones.length})
-                                </div>
-                                {lowZones.map(zone => (
-                                    <ZoneCard
-                                        key={zone.id}
-                                        zone={zone}
-                                        isSelected={selectedZone?.id === zone.id}
-                                        onSelect={() => setSelectedZone(zone)}
-                                        onEdit={() => handleEditZone(zone)}
-                                        onDelete={() => handleDeleteZone(zone)}
-                                    />
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Empty State */}
-                        {filteredZones.length === 0 && zones.length > 0 && (
-                            <div className="text-center py-12">
-                                <Filter className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
-                                <p className="text-sm text-zinc-500">No zones match your filters</p>
-                                <Button
-                                    onClick={() => { setSearchQuery(''); setSeverityFilter('ALL'); }}
-                                    size="sm"
-                                    className="mt-4 bg-white/5 hover:bg-white/10 text-zinc-400"
-                                >
-                                    Clear Filters
-                                </Button>
-                            </div>
-                        )}
-
-                        {zones.length === 0 && (
-                            <div className="text-center py-12">
-                                <MapPin className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
-                                <p className="text-sm text-zinc-500">No zones configured</p>
-                                <Button
-                                    onClick={handleAddZone}
-                                    size="sm"
-                                    className="mt-4 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20"
-                                >
-                                    <Plus className="w-4 h-4 mr-1" />
-                                    Create First Zone
-                                </Button>
-                            </div>
-                        )}
+                    {/* Placeholder - Zone list is in right panel */}
+                    <div className="flex-1 flex items-center justify-center p-4">
+                        <div className="text-center">
+                            <MapPin className="w-12 h-12 text-purple-400/50 mx-auto mb-3" />
+                            <p className="text-sm text-zinc-400">Select zones on the map</p>
+                            <p className="text-xs text-zinc-600 mt-1">Click on zone polygons to view details</p>
+                            <p className="text-xs text-cyan-500/80 mt-3">Active Zones list is in the right panel →</p>
+                        </div>
                     </div>
                 </div>
 

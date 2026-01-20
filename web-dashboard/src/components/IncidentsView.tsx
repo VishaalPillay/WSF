@@ -1,7 +1,144 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Clock, MapPin, User, CheckCircle, AlertTriangle, XCircle, Filter, Search } from 'lucide-react';
+import { ShieldAlert, Clock, MapPin, User, CheckCircle, AlertTriangle, XCircle, Filter, Search, Plus, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { REAL_INCIDENTS, REAL_USER_PROFILES } from '../data/velloreRealData';
+import { useZones } from '../hooks/useZones';
+
+// Add Zone Card Component (shown when no incident selected)
+const AddZoneCard: React.FC = () => {
+    const [zoneName, setZoneName] = useState('');
+    const [zoneType, setZoneType] = useState<'HIGH' | 'MODERATE'>('HIGH');
+    const [lat, setLat] = useState('12.9692');
+    const [lng, setLng] = useState('79.1559');
+    const [radius, setRadius] = useState('200');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { addZone } = useZones();
+
+    const handleAddZone = async () => {
+        if (!zoneName.trim()) return;
+        setIsSubmitting(true);
+        await addZone({
+            location: zoneName,
+            lat: parseFloat(lat),
+            lng: parseFloat(lng),
+            severity: zoneType,
+            type: 'Custom Zone',
+            description: `Manually added zone: ${zoneName}`,
+            radius: parseInt(radius),
+            active_hours: '00-24'
+        });
+        setIsSubmitting(false);
+        setZoneName('');
+    };
+
+    return (
+        <div className="w-full max-w-md p-6">
+            <div className="bg-[#18181b] border border-white/10 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20">
+                        <Target className="w-6 h-6 text-cyan-400" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-zinc-100">Add New Zone</h3>
+                        <p className="text-xs text-zinc-500">Create a risk zone on the map</p>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    {/* Zone Name */}
+                    <div>
+                        <label className="text-xs text-zinc-400 mb-1 block">Zone Name</label>
+                        <input
+                            type="text"
+                            value={zoneName}
+                            onChange={(e) => setZoneName(e.target.value)}
+                            placeholder="e.g., Katpadi Station Area"
+                            className="w-full px-3 py-2 bg-[#09090b] border border-white/10 rounded-lg text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none"
+                        />
+                    </div>
+
+                    {/* Zone Type */}
+                    <div>
+                        <label className="text-xs text-zinc-400 mb-2 block">Risk Level</label>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setZoneType('HIGH')}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase transition-all ${zoneType === 'HIGH'
+                                    ? 'bg-red-500 text-white'
+                                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                    }`}
+                            >
+                                🔴 High Risk
+                            </button>
+                            <button
+                                onClick={() => setZoneType('MODERATE')}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase transition-all ${zoneType === 'MODERATE'
+                                    ? 'bg-yellow-500 text-black'
+                                    : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                                    }`}
+                            >
+                                🟡 Moderate
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Coordinates */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-xs text-zinc-400 mb-1 block">Latitude</label>
+                            <input
+                                type="text"
+                                value={lat}
+                                onChange={(e) => setLat(e.target.value)}
+                                className="w-full px-3 py-2 bg-[#09090b] border border-white/10 rounded-lg text-sm text-zinc-100 font-mono focus:border-cyan-500/50 focus:outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-zinc-400 mb-1 block">Longitude</label>
+                            <input
+                                type="text"
+                                value={lng}
+                                onChange={(e) => setLng(e.target.value)}
+                                className="w-full px-3 py-2 bg-[#09090b] border border-white/10 rounded-lg text-sm text-zinc-100 font-mono focus:border-cyan-500/50 focus:outline-none"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Radius Slider */}
+                    <div>
+                        <label className="text-xs text-zinc-400 mb-1 flex justify-between">
+                            <span>Radius</span>
+                            <span className="text-cyan-400 font-mono">{radius}m</span>
+                        </label>
+                        <input
+                            type="range"
+                            min="50"
+                            max="500"
+                            step="25"
+                            value={radius}
+                            onChange={(e) => setRadius(e.target.value)}
+                            className="w-full accent-cyan-500"
+                        />
+                    </div>
+
+                    {/* Submit */}
+                    <Button
+                        onClick={handleAddZone}
+                        disabled={isSubmitting || !zoneName.trim()}
+                        className="w-full bg-cyan-500 hover:bg-cyan-600 text-black font-bold py-3 uppercase tracking-wide"
+                    >
+                        {isSubmitting ? 'Creating...' : (
+                            <>
+                                <Plus className="w-4 h-4 mr-2" />
+                                Create Zone
+                            </>
+                        )}
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface Incident {
     id: string;
@@ -164,11 +301,7 @@ export const IncidentsView: React.FC = () => {
                         <IncidentDetails incident={selectedIncident} onClose={() => setSelectedIncident(null)} />
                     </div>
                 ) : (
-                    <div className="text-center">
-                        <ShieldAlert className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
-                        <h3 className="text-xl font-bold text-zinc-100 mb-2">Select an Incident</h3>
-                        <p className="text-zinc-500 text-sm">Click on an incident to view details and take action</p>
-                    </div>
+                    <AddZoneCard />
                 )}
             </div>
         </div>
@@ -236,6 +369,31 @@ const IncidentCard: React.FC<{ incident: Incident; isSelected: boolean; onClick:
 
 // Incident Details Component
 const IncidentDetails: React.FC<{ incident: Incident; onClose: () => void }> = ({ incident, onClose }) => {
+
+    // We need access to addZone. Ideally creating a context or passing it down. 
+    // Since this is a sub-component, we can use the hook here too, but it might re-fetch zones.
+    // Better to pass it as prop, but for quick implementation I'll use the hook inside.
+    const { addZone } = useZones();
+    const [isCreatingZone, setIsCreatingZone] = useState(false);
+
+    const handleCreateZone = async () => {
+        setIsCreatingZone(true);
+        await addZone({
+            location: `Hazard Zone - ${incident.title}`,
+            lat: incident.coordinates[0],
+            lng: incident.coordinates[1],
+            severity: 'HIGH',
+            type: 'Emergency',
+            description: `Auto-generated zone from incident ${incident.id}: ${incident.description}`,
+            radius: 200,
+            active_hours: '00-24'
+        });
+        setIsCreatingZone(false);
+        // Show success / Toast?
+        console.log("Zone created for incident");
+        onClose(); // Close details or stay?
+    };
+
     return (
         <div className="bg-[#18181b] border border-white/10 rounded-xl p-6 space-y-6">
 
@@ -303,6 +461,22 @@ const IncidentDetails: React.FC<{ incident: Incident; onClose: () => void }> = (
                 <Button className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20">
                     <XCircle className="w-4 h-4 mr-2" />
                     Escalate
+                </Button>
+            </div>
+
+            {/* Extra Admin Actions */}
+            <div className="pt-4 border-t border-white/5">
+                <Button
+                    onClick={handleCreateZone}
+                    disabled={isCreatingZone}
+                    className="w-full bg-red-500 hover:bg-red-600 text-white font-bold tracking-wide uppercase transition-all shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:shadow-[0_0_30px_rgba(239,68,68,0.5)]"
+                >
+                    {isCreatingZone ? 'Creating Zone...' : (
+                        <>
+                            <AlertTriangle className="w-4 h-4 mr-2" />
+                            Create Hazard Zone & Broadcast
+                        </>
+                    )}
                 </Button>
             </div>
         </div>
