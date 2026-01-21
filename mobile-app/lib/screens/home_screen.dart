@@ -10,7 +10,6 @@ import 'package:mobile_app/services/api_service.dart';
 import 'package:mobile_app/services/mapbox_service.dart';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:background_sms/background_sms.dart';
 import 'package:mobile_app/services/audio_sentinel_service.dart';
 import 'package:geolocator/geolocator.dart'
     as geo; // ✅ Aliased to avoid conflict
@@ -94,7 +93,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     await [
       Permission.location,
       Permission.microphone,
-      Permission.sms,
     ].request();
   }
 
@@ -289,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         false;
 
     if (shouldSend) {
-      _sendAutomaticSOS();
+      _launchSmsApp();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -300,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _sendAutomaticSOS() async {
+  Future<void> _launchSmsApp() async {
     const String emergencyNumber = "+919940903891";
     // ✅ Updated to send actual coordinates if available
     final String message =
@@ -308,51 +306,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text("Sending Emergency Signal..."),
+        content: Text("Opening SMS App..."),
         backgroundColor: Colors.redAccent,
         duration: Duration(seconds: 2),
       ),
     );
 
-    try {
-      var status = await Permission.sms.status;
-      if (!status.isGranted) {
-        status = await Permission.sms.request();
-      }
-
-      if (status.isGranted) {
-        SmsStatus result = await BackgroundSms.sendMessage(
-          phoneNumber: emergencyNumber,
-          message: message,
-        );
-
-        if (result == SmsStatus.sent) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("SOS SENT SUCCESSFULLY!"),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else {
-          _fallbackToManualSms(emergencyNumber, message);
-        }
-      } else {
-        _fallbackToManualSms(emergencyNumber, message);
-      }
-    } catch (e) {
-      print("Background SMS failed: $e");
-      _fallbackToManualSms(emergencyNumber, message);
-    }
-  }
-
-  void _fallbackToManualSms(String number, String message) async {
     final Uri smsUri = Uri(
       scheme: 'sms',
-      path: number,
+      path: emergencyNumber,
       queryParameters: <String, String>{'body': message},
     );
     if (await canLaunchUrl(smsUri)) {
       await launchUrl(smsUri);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Could not launch SMS app."),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 

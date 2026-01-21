@@ -24,12 +24,25 @@ class AudioSentinelService {
     'Scream',
     'Shout',
     'Yell',
+    'Bellow', // Deep aggressive shouting
+    'Roar', // Aggressive outcome
     'Screaming',
+    'Crying, sobbing',
+    'Wail', // Distress signal
     'Explosion',
+    'Gunshot', // High danger
+    'Bang',
+    'Smash', // Physical violence
+    'Crash',
+    'Breaking',
     'Glass',
     'Shatter',
-    'Crying, sobbing',
-    'Help'
+    'Whack', // Physical impact
+    'Slap',
+    'Punch', // Fighting sounds (if mapped)
+    'Aggressive', // Catch-all for aggressive moods
+    'Siren', // Emergency context
+    'Alarm'
   ];
 
   Future<void> initialize() async {
@@ -146,8 +159,8 @@ class AudioSentinelService {
         int index = entry.key;
         double score = entry.value;
 
-        if (score > 0.25) {
-          // ✅ Lowered Threshold (was 0.45)
+        // ✅ Lowered Threshold to 0.15 for higher sensitivity
+        if (score > 0.15) {
           String detectedLabel =
               _labels.length > index ? _labels[index] : "Unknown";
 
