@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+
 import 'screens/login_screen.dart'; 
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Pass your Mapbox Token here. 
-  MapboxOptions.setAccessToken("pk.eyJ1IjoibmlraGlsMjEwMjA2IiwiYSI6ImNta2U0NG0zdTAzMzUzZXMwZjZwbXFzZ3kifQ.fgjpDhGp_9bUapwaLEvtsg");
+  // Use a fallback or env variable instead of the hardcoded key
+  final String mapboxToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
+  MapboxOptions.setAccessToken(mapboxToken);
 
   runApp(const SentraApp());
 }

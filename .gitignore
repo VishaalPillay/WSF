@@ -72,6 +72,9 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 
+# Ignore root env file
+.env
+
 # =========================
 # MISC
 # =========================

@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart'; //
 
 class MapboxService {
-  // Hardcoded for Hackathon velocity - ideally move to .env
-  final String _accessToken =
-      "pk.eyJ1IjoibmlraGlsMjEwMjA2IiwiYSI6ImNta2U0NG0zdTAzMzUzZXMwZjZwbXFzZ3kifQ.fgjpDhGp_9bUapwaLEvtsg";
+  // Token is now retrieved from environment variables
+  final String _accessToken = dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? ""; 
 
   Future<List<Map<String, dynamic>>> getSuggestions(String query) async {
     if (query.isEmpty) return [];

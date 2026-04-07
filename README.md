@@ -1,126 +1,206 @@
-# 🛡️ SENTRA: AI-Driven Women's Safety Framework
+# SENTRA – AI Powered Women's Safety System
 
-**Target Event:** VIT Hackathon (AI/ML Track)  
-**Status:** Pre-Development / Architecture Phase  
-**Demo Scope:** VIT Vellore Campus + 20km Radius (Katpadi, Chittoor Stop, Green Circle)
+SENTRA is an **AI-driven proactive safety platform** designed to help women travel safely by combining **intelligent routing, real-time monitoring, and on-device threat detection**.
 
----
+Unlike traditional safety apps that depend only on a **manual SOS button**, SENTRA continuously evaluates the surrounding environment and **guides users through safer routes while monitoring potential threats automatically**.
 
-## 1. The Core Vision
-SENTRA is a **Proactive** safety system, not just a **Reactive** panic button. While traditional apps wait for a user to press SOS, SENTRA actively monitors risk and routes women through safer paths using "SafeNav," while preserving battery life and privacy through "Adaptive Polling."
-
-**The Winning Demo Scenario:** A female student travels from **Katpadi Station** to **VIT Main Gate** at night. The app routes her through safe business streets (avoiding dark alleys), monitors for aggression automatically in dark zones via Audio ML, and alerts the "Authority Dashboard" instantly upon threat confirmation.
+The system integrates **AI models, geospatial analysis, and sensor data** to detect risks and notify authorities in real time.
 
 ---
 
-## 2. System Architecture
+# 🚀 Key Features
 
-| Component | Technology | Responsibility |
-| :--- | :--- | :--- |
-| **Mobile App (Edge)** | Flutter / React Native | User Interface, Sensor Data, TFLite Inference, Map Display. |
-| **The "Brain" (Backend)** | Python (FastAPI/Flask) | Route Scoring Logic, Zone Management, API handling. |
-| **Database** | Firebase / Supabase | Real-time user location syncing, User Auth, Zone storage. |
-| **ML Engine** | TensorFlow Lite (On-Device) | Audio Event Detection (Screaming, Glass Breaking). |
-| **Dashboard** | React.js / Next.js | Police/Authority view, SOS Alerts, Heatmaps. |
+## 🗺️ SafeNav – Intelligent Safe Routing
 
----
+Traditional navigation apps optimize for **shortest distance or fastest time**.
+SENTRA introduces **safety-aware routing**.
 
-## 3. Key Features & Technical Logic
+The system evaluates multiple routes and assigns a **safety score** based on environmental factors.
 
-### Feature 1: SafeNav (Predictive Routing)
-*The app doesn't just show the shortest route; it shows the safest.*
+### Safety Score Calculation
 
-* **The Problem:** Google Maps only optimizes for time/distance.
-* **Our Solution:** A wrapper around standard maps that weights routes based on safety data.
-* **The Algorithm:**
-    1.  Fetch 3 distinct routes from **Mapbox/Google Directions API**.
-    2.  Break routes into 500m coordinate segments.
-    3.  **Calculate Score:**
-        * `Base Score` = Distance (Lower is better).
-        * `Safety Bonus` = **+10 points** if segment is near an "Open Business" (Proxy: Google Places "Open Now").
-        * `Risk Penalty` = **-50 points** if segment intersects a "Red Zone" (Historical Crime/Darkness).
-    4.  **Output:** Highlight the route with the highest Safety Score in Green.
+* **Base Score:** Distance of route (shorter routes preferred)
+* **Safety Bonus:** Segments near open businesses or crowded areas
+* **Risk Penalty:** Segments passing through high-risk zones
 
-### Feature 2: Adaptive Polling (Battery Optimization)
-*We maximize safety without killing the phone battery.*
-
-* **Logic:** A State Machine controls the sensors based on the user's current zone risk level.
-* **State A: Green Zone (Safe - e.g., Inside VIT Hostels)**
-    * **GPS:** Polling every 5 minutes.
-    * **Audio ML:** OFF.
-    * **Battery Impact:** Minimal.
-* **State B: Yellow Zone (Caution - e.g., Katpadi Station)**
-    * **GPS:** Polling every 1 minute.
-    * **Audio ML:** STANDBY (Mic initialized but not processing).
-* **State C: Red Zone (Danger - e.g., Dark road near Green Circle)**
-    * **GPS:** Real-time streaming (WebSocket).
-    * **Audio ML:** ACTIVE (Continuous listening).
-
-### Feature 3: Sentinel Audio (Edge AI)
-*Detects threats without the user touching the phone.*
-
-* **Model:** Lightweight **TFLite** model (MobileNet/YAMNet based).
-* **Triggers:** `Screaming`, `Glass Breaking`, `Aggressive Male Speech`.
-* **False Positive Check (Multimodal Verification):**
-    ```python
-    IF Audio_Detects_Scream(Confidence > 0.85):
-        Check_Accelerometer()
-        IF Motion == "Running" OR Motion == "Violent Shaking":
-            TRIGGER_SOS()
-        ELSE:
-            Vibrate_Phone_Check() # Haptic Warning
-    ```
-* **Privacy:** All processing happens **on-device**. Audio is strictly local unless SOS is confirmed.
-
-### Feature 4: Algorithmic Geofencing
-*Instead of manually drawing zones, we simulate AI clustering.*
-
-* **Input Data:** JSON dataset of ~50 "Incident Points" around Vellore (simulating past harassment reports).
-* **The Algorithm:** **DBSCAN** (Density-Based Spatial Clustering) running on the Python backend.
-* **Output:** Automatically generated polygons (Red Zones) around high-density incident areas.
+The safest route is highlighted for the user.
 
 ---
 
-## 📅 4. Hackathon Roadmap (10-Day Sprint)
+## 🔋 Adaptive Polling – Smart Battery Optimization
 
-### Phase 1: Data Preparation (Days 1-3)
-- [ ] **Map Data:** Coordinate mapping for VIT Gate, Katpadi Station, Green Circle, major shops, and police stations.
-- [ ] **Crime Data:** Generate `crimes.json` with synthetic incident data clustered around "Dark Spots" in Vellore.
-- [ ] **Audio Data:** Acquire ESC-50 or AudioSet datasets for training.
+Continuous monitoring can drain device battery. SENTRA solves this using **zone-based adaptive polling**.
 
-### Phase 2: Core Engines (Days 4-7)
-- [ ] **ML:** Train TFLite model for specific sound classes (Scream vs. Background Noise).
-- [ ] **Backend:** Build the Route Scoring API.
-- [ ] **Mobile:** UI Skeleton (Login -> Map -> SOS).
+| Zone Type       | Behavior                                            |
+| --------------- | --------------------------------------------------- |
+| **Green Zone**  | GPS updates every 5 minutes, monitoring disabled    |
+| **Yellow Zone** | GPS updates every 1 minute, sensors on standby      |
+| **Red Zone**    | Real-time GPS streaming and active threat detection |
 
-### Phase 3: Integration & Demo Prep (Days 8-10)
-- [ ] Connect TFLite model to Mobile App.
-- [ ] **CRITICAL:** Build the **"Developer Simulation Menu"**:
-    -   `[DEV] Force Enter Red Zone`
-    -   `[DEV] Simulate SOS Trigger`
+This ensures **maximum safety with minimal battery usage**.
 
 ---
 
-## 👥 5. Development Roles
+## 🎧 Sentinel Audio – AI Threat Detection
 
-### 🧑‍💻 Role 1: ML & Backend Architect
-* **Stack:** Python, TensorFlow, FastAPI.
-* **Focus:** Training the audio model, writing the SafeNav routing logic, and setting up the Zone database.
+SENTRA includes an **on-device machine learning model** that detects potential threats using environmental audio.
 
-### 🧑‍💻 Role 2: Mobile Lead
-* **Stack:** Flutter / React Native, Mapbox SDK.
-* **Focus:** Building the UI, handling background services (Adaptive Polling), and integrating sensors.
+The model detects sounds such as:
 
-### 🧑‍💻 Role 3: Integration & Dashboard
-* **Stack:** React.js, Firebase/Supabase.
-* **Focus:** Building the Authority Dashboard, real-time alerts, and gathering the "Vellore Simulation Data."
+* Screaming
+* Glass breaking
+* Aggressive shouting
+
+### Multimodal Threat Verification
+
+To reduce false alarms, SENTRA verifies multiple signals before triggering alerts.
+
+```python
+if detect_scream(confidence > 0.85):
+    if motion == "running" or motion == "violent_shaking":
+        trigger_sos()
+    else:
+        vibrate_phone_warning()
+```
+
+All audio processing occurs **locally on the device**, ensuring **user privacy**.
 
 ---
 
-## 🛠️ Resources
+## 📍 Algorithmic Geofencing
 
-* **Maps:** [Mapbox Studio](https://www.mapbox.com/)
-* **Audio Dataset:** [ESC-50 (GitHub)](https://github.com/karolpiczak/ESC-50)
-* **Design System:** Material Design 3
+Instead of manually marking unsafe areas, SENTRA automatically identifies risk zones using clustering algorithms.
 
-> **Note:** This project is designed for the VIT Hackathon 2026. All data used is for simulation/demonstration purposes within the Vellore region.
+### Method Used
+
+**DBSCAN (Density Based Spatial Clustering)**
+
+### Input
+
+* Historical incident reports
+* Crowd density indicators
+* Location patterns
+
+### Output
+
+Automatically generated **high-risk zones** displayed on the map.
+
+---
+
+# 🏗️ System Architecture
+
+| Component       | Technology               | Responsibility                               |
+| --------------- | ------------------------ | -------------------------------------------- |
+| **Mobile App**  | Flutter / React Native   | UI, sensor data collection, TFLite inference |
+| **Backend API** | Python (FastAPI / Flask) | Route scoring logic, zone management         |
+| **Database**    | Firebase / Supabase      | Authentication, location sync, zone storage  |
+| **ML Engine**   | TensorFlow Lite          | On-device audio threat detection             |
+| **Dashboard**   | React.js / Next.js       | Monitoring alerts and incident visualization |
+
+---
+
+# 🧠 Core Technologies
+
+* **Flutter / React Native**
+* **Python FastAPI**
+* **TensorFlow Lite**
+* **Firebase / Supabase**
+* **Mapbox / Google Maps API**
+* **DBSCAN Clustering Algorithm**
+
+---
+
+# 📂 Project Structure
+
+```
+sentra/
+│
+├── mobile-app/
+│   ├── ui/
+│   ├── sensors/
+│   └── navigation/
+│
+├── backend/
+│   ├── api/
+│   ├── routing-engine/
+│   └── zone-clustering/
+│
+├── ml-models/
+│   ├── audio-detection/
+│   └── training-scripts/
+│
+├── dashboard/
+│   ├── alerts/
+│   └── heatmaps/
+│
+└── datasets/
+```
+
+---
+
+# ⚙️ Installation
+
+## Clone Repository
+
+```bash
+git clone https://github.com/yourusername/sentra.git
+cd sentra
+```
+
+---
+
+## Backend Setup
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+---
+
+## Mobile App Setup
+
+```bash
+cd mobile-app
+flutter pub get
+flutter run
+```
+
+---
+
+# 📊 Example Workflow
+
+1. User starts navigation in the app.
+2. SENTRA fetches multiple possible routes.
+3. Each route is analyzed using **safety scoring logic**.
+4. The safest route is suggested.
+5. While travelling:
+
+   * location updates are monitored
+   * sensors activate in high-risk zones
+6. If a threat is detected:
+
+   * SOS alert is triggered
+   * location is sent to the monitoring dashboard.
+
+---
+
+# 🔒 Privacy & Security
+
+* All **audio analysis is performed on-device**
+* No continuous recording or cloud storage of user audio
+* Location data is encrypted and shared only during emergencies.
+
+---
+
+# 📈 Future Improvements
+
+* Real crime dataset integration
+* Crowd-sourced incident reporting
+* Smart wearable integration
+* AI-based video anomaly detection
+* Predictive safety analytics using historical patterns
+* Architecture diagram
+* App UI screenshots
+* Animated system flow diagram
