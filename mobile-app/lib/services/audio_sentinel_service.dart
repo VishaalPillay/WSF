@@ -74,6 +74,13 @@ class AudioSentinelService {
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          iosConfig: IosRecordConfig(
+            categoryOptions: [
+              IosAudioCategoryOption.mixWithOthers,
+              IosAudioCategoryOption.defaultToSpeaker,
+              IosAudioCategoryOption.allowBluetooth,
+            ],
+          ),
         ),
       );
 

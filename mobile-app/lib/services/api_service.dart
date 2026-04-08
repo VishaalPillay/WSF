@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart'; //
 
 class ApiService {
-  final String _baseUrl = 'http://172.20.10.2:8000';
+  // Base URL is now dynamic based on environment
+  final String _baseUrl = dotenv.env['BACKEND_API_BASE_URL'] ?? 'http://localhost:8000';
 
-  // UPDATED: Now accepts a simulated hour (e.g., 22 for 10 PM)
   Future<List<dynamic>> getDangerZones({int? simulatedHour}) async {
-    // Build the URL with the simulation parameter if provided
     String urlString = '$_baseUrl/zones';
     if (simulatedHour != null) {
       urlString += '?simulated_hour=$simulatedHour';
