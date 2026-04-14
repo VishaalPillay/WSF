@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend-ai:
+    build:
+      context: ./backend-ai
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./assets:/app/assets
+    environment:
+      - SUPABASE_URL=http://host.docker.internal:54321
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-your-anon-key-here}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+# Note: Supabase services are managed by the Supabase CLI (npx supabase start)
+# and are not included in this docker-compose.yml to avoid duplication and 
+# ensure parity with production environments.
