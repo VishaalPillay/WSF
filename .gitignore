@@ -80,3 +80,10 @@ $RECYCLE.BIN/
 # =========================
 # Ignore specific large files if not using Git LFS
 # *.tflite (Commented out because you NEED this for your project)
+
+# =========================
+# AGENT / AI TOOLS
+# =========================
+.agents/
+.claude/
+skills-lock.json
