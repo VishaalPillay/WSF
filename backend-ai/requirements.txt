@@ -1,3 +1,8 @@
 fastapi
 uvicorn
 polyline
+supabase
+scikit-learn
+shapely>=2.0.0
+numpy
+python-dotenv
