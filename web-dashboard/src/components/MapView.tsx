@@ -5,7 +5,7 @@ import { Incident, LiveLocation } from '../types';
 import { Zone } from '../hooks/useZones';
 import { REAL_USER_PROFILES, PATROL_ROUTES } from '../data/velloreRealData';
 
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoibmlraGlsMjEwMjA2IiwiYSI6ImNta2U0NG0zdTAzMzUzZXMwZjZwbXFzZ3kifQ.fgjpDhGp_9bUapwaLEvtsg';
+mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
 
 interface MapViewProps {
   incidents?: Incident[];

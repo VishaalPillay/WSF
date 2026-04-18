@@ -45,6 +45,13 @@ $RECYCLE.BIN/
 **/mobile-app/android/gradlew.bat
 **/mobile-app/android/local.properties
 
+# Flutter generated desktop plugin registrants
+**/mobile-app/linux/flutter/generated_plugin_registrant.*
+**/mobile-app/linux/flutter/generated_plugins.cmake
+**/mobile-app/windows/flutter/generated_plugin_registrant.*
+**/mobile-app/windows/flutter/generated_plugins.cmake
+**/mobile-app/macos/Flutter/GeneratedPluginRegistrant.swift
+
 # =========================
 # PYTHON (Backend / AI)
 # =========================

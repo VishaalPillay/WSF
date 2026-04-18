@@ -24,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  static const EventChannel _volumeButtonChannel = EventChannel('wsf/hardware_buttons');
   MapboxMap? mapboxMap;
   PolygonAnnotationManager? _polygonManager;
   PolylineAnnotationManager? _polylineManager;
@@ -45,8 +46,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Timer? _debounce;
 
   // Coordinates
-  double _startLat = 12.9692; // Default: VIT
-  double _startLng = 79.1559;
+  double _startLat = 12.8230; // Default: SRM University
+  double _startLng = 80.0444;
   double? _destLat;
   double? _destLng;
 
@@ -64,6 +65,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   List<Position> _currentRouteGeometry = [];
   String? _activeTripId;
+  StreamSubscription? _volumeDownSubscription;
+  final List<DateTime> _volumeDownPresses = [];
+  bool _isImmediateSosDispatching = false;
 
   // ✅ NEW: Zone Logic Variables
   List<dynamic> _activeZones = []; // Stores current zones for calculation
@@ -82,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _requestPermissions();
     _initAudioSentinel();
     _initBackgroundTracking(); // ✅ Start native tracking wrappers
+    _initVolumeDownOverride();
   }
 
   @override
@@ -91,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _startFocus.dispose();
     _destinationFocus.dispose();
     _debounce?.cancel();
+    _volumeDownSubscription?.cancel();
     _audioSentinel.stopListening();
     super.dispose();
   }
@@ -106,11 +112,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     await _audioSentinel.initialize();
     _audioSentinel.onDangerDetected = (event, confidence) {
       if (mounted && ModalRoute.of(context)?.isCurrent == true) {
-        _handleSosSequence(triggerReason: event);
+        _showDriftOverlay();
       }
     };
     _audioSentinel.startListening();
     setState(() {});
+  }
+
+  void _initVolumeDownOverride() {
+    _volumeDownSubscription =
+        _volumeButtonChannel.receiveBroadcastStream().listen(
+      (_) => _onVolumeDownPressed(),
+      onError: (error) {
+        print('Volume button listener error: $error');
+      },
+    );
+  }
+
+  void _onVolumeDownPressed() {
+    final now = DateTime.now();
+    _volumeDownPresses.add(now);
+    _volumeDownPresses.removeWhere(
+      (pressedAt) => now.difference(pressedAt) > const Duration(seconds: 2),
+    );
+
+    if (_volumeDownPresses.length >= 3) {
+      _volumeDownPresses.clear();
+      _triggerImmediateSosBypass();
+    }
   }
 
   // ✅ NEW: Geofence OS Tracking Engine
@@ -321,6 +350,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<void> _triggerImmediateSosBypass() async {
+    if (_isImmediateSosDispatching) return;
+    _isImmediateSosDispatching = true;
+
+    GeofenceService().cancelDriftTimer();
+    SosCountdownDialog.dismissIfActive();
+    DriftSosOverlay.dismissIfActive();
+
+    try {
+      if (_activeTripId != null) {
+        await Supabase.instance.client
+            .from('trips')
+            .update({'status': 'sos'})
+            .eq('id', _activeTripId as String);
+      } else {
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId != null) {
+          await Supabase.instance.client
+              .from('trips')
+              .update({'status': 'sos'})
+              .eq('user_id', userId)
+              .eq('status', 'active');
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Emergency override activated. Security dispatched."),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to dispatch emergency: $e")),
+      );
+    } finally {
+      _isImmediateSosDispatching = false;
     }
   }
 
@@ -818,8 +889,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                            // Start Trip
                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Generating Secure Escort Trip...")));
                            try {
+                             final userId = Supabase.instance.client.auth.currentUser?.id;
+                             if (userId == null) {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 const SnackBar(content: Text("Please sign in to start a trip.")),
+                               );
+                               return;
+                             }
                              final response = await Supabase.instance.client.from('trips').insert({
-                               'user_id': "mac_user_01",
+                               'user_id': userId,
                                'status': 'active'
                              }).select('id').single();
                              
@@ -1069,7 +1147,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 15),
                 _buildSafePlaceTile("Katpadi Station", "0.5 km • Open 24x7"),
                 _buildSafePlaceTile(
-                    "VIT Main Gate", "1.2 km • Security Present"),
+                    "SRM Main Gate", "1.2 km • Security Present"),
                 const SizedBox(height: 20),
               ],
             ),
@@ -1184,12 +1262,17 @@ class SosCountdownDialog extends StatefulWidget {
   final String? triggerReason;
   const SosCountdownDialog({super.key, this.triggerReason});
 
+  static void dismissIfActive() {
+    _SosCountdownDialogState.activeInstance?._dismissForOverride();
+  }
+
   @override
   State<SosCountdownDialog> createState() => _SosCountdownDialogState();
 }
 
 class _SosCountdownDialogState extends State<SosCountdownDialog>
     with SingleTickerProviderStateMixin {
+  static _SosCountdownDialogState? activeInstance;
   late AnimationController _controller;
   int _countdown = 10;
   Timer? _timer;
@@ -1197,6 +1280,7 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
   @override
   void initState() {
     super.initState();
+    activeInstance = this;
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
@@ -1216,9 +1300,19 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
 
   @override
   void dispose() {
+    if (activeInstance == this) {
+      activeInstance = null;
+    }
     _controller.dispose();
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _dismissForOverride() {
+    _timer?.cancel();
+    if (mounted) {
+      Navigator.of(context).pop(false);
+    }
   }
 
   @override
@@ -1362,17 +1456,23 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
 class DriftSosOverlay extends StatefulWidget {
   const DriftSosOverlay({super.key});
 
+  static void dismissIfActive() {
+    _DriftSosOverlayState.activeInstance?._dismissForOverride();
+  }
+
   @override
   State<DriftSosOverlay> createState() => _DriftSosOverlayState();
 }
 
 class _DriftSosOverlayState extends State<DriftSosOverlay> {
+  static _DriftSosOverlayState? activeInstance;
   int _countdown = 15;
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
+    activeInstance = this;
     _triggerHaptics();
     
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -1397,8 +1497,18 @@ class _DriftSosOverlayState extends State<DriftSosOverlay> {
 
   @override
   void dispose() {
+    if (activeInstance == this) {
+      activeInstance = null;
+    }
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _dismissForOverride() {
+    _timer?.cancel();
+    if (mounted) {
+      Navigator.of(context).pop(false);
+    }
   }
 
   @override

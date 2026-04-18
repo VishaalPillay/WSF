@@ -23,6 +23,12 @@ class ApiService {
     final url = Uri.parse('$_baseUrl/get-safe-route');
 
     try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        print('⚠️ Route Error: user is not authenticated.');
+        return null;
+      }
+
       final response = await http.post(
         url,
         headers: {"Content-Type": "application/json"},
@@ -31,7 +37,7 @@ class ApiService {
           "start_lng": startLng,
           "end_lat": endLat,
           "end_lng": endLng,
-          "user_id": "mac_user_01"
+          "user_id": userId,
         }),
       );
 

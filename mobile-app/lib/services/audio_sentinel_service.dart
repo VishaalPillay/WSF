@@ -8,6 +8,7 @@ class AudioSentinelService {
   Interpreter? _interpreter;
   final AudioRecorder _audioRecorder = AudioRecorder();
   StreamSubscription? _audioSubscription;
+  DateTime? _lastInferenceAt;
 
   // Logic Control
   bool isListening = false;
@@ -16,6 +17,7 @@ class AudioSentinelService {
   // YAMNet Specifications (DO NOT CHANGE)
   final int sampleRate = 16000;
   final int requiredSamples = 15600; // 0.975 seconds of audio
+  final Duration minInferenceInterval = const Duration(milliseconds: 900);
   List<String> _labels = [];
   List<double> _audioBuffer = [];
 
@@ -50,14 +52,14 @@ class AudioSentinelService {
       // 1. Load Model
       _interpreter =
           await Interpreter.fromAsset('assets/sentinel_audio.tflite');
-      print("✅ YAMNet Loaded Successfully");
+      print("Audio sentinel model ready");
 
       // 2. Load Labels
       final labelData = await rootBundle.loadString('assets/labels.txt');
       _labels = labelData.split('\n');
-      print("✅ Loaded ${_labels.length} Audio Labels");
+      print("Audio sentinel labels loaded: ${_labels.length}");
     } catch (e) {
-      print("❌ Model Load Error: $e");
+      print("Audio sentinel init failed: $e");
     }
   }
 
@@ -67,6 +69,7 @@ class AudioSentinelService {
     if (await _audioRecorder.hasPermission()) {
       isListening = true;
       _audioBuffer = [];
+      _lastInferenceAt = null;
 
       // Start streaming raw PCM data (16-bit integer)
       final stream = await _audioRecorder.startStream(
@@ -116,6 +119,14 @@ class AudioSentinelService {
 
     // Check if we have enough data for inference
     if (_audioBuffer.length >= requiredSamples) {
+      final now = DateTime.now();
+      if (_lastInferenceAt != null &&
+          now.difference(_lastInferenceAt!) < minInferenceInterval) {
+        // Keep trimming stale audio while we throttle model runs.
+        _audioBuffer.removeRange(0, (requiredSamples / 2).floor());
+        return;
+      }
+
       // Take exact chunk
       var inputChunk = _audioBuffer.sublist(0, requiredSamples);
 
@@ -123,6 +134,7 @@ class AudioSentinelService {
       _audioBuffer.removeRange(0, (requiredSamples / 2).floor());
 
       _runInference(inputChunk);
+      _lastInferenceAt = now;
     }
   }
 
@@ -152,15 +164,6 @@ class AudioSentinelService {
       top5.sort((a, b) => b.value.compareTo(a.value));
       top5 = top5.take(5).toList();
 
-      // Debug: Print Top 3
-      if (top5.isNotEmpty && top5[0].value > 0.1) {
-        String debugString = top5.take(3).map((e) {
-          String label = _labels.length > e.key ? _labels[e.key] : "Unknown";
-          return "$label (${e.value.toStringAsFixed(2)})";
-        }).join(", ");
-        print("🎤 Hearing: $debugString");
-      }
-
       // 🚨 DANGER CHECK (Top 5)
       for (var entry in top5) {
         int index = entry.key;
@@ -173,7 +176,7 @@ class AudioSentinelService {
 
           for (var danger in _dangerKeywords) {
             if (detectedLabel.toLowerCase().contains(danger.toLowerCase())) {
-              print("🚨 DANGER DETECTED: $detectedLabel ($score)");
+              print("Danger audio detected: $detectedLabel ($score)");
               onDangerDetected?.call(detectedLabel, score);
               return; // Trigger once per chunk
             }

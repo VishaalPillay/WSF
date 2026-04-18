@@ -1,11 +1,16 @@
-import json
 import os
-from routes.safenav import find_safest_route
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from supabase import Client, create_client
+
+load_dotenv()
+
+from routes.safenav import find_safest_route
 
 app = FastAPI(title="Sentra AI Backend", version="1.0")
 
@@ -18,31 +23,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 2. DATA LOADING ---
-CRIME_DATA = {"incidents": []}
-ASSETS_PATH = os.path.join(os.path.dirname(__file__), "../assets/crimes.json")
+# --- 2. SUPABASE CLIENT ---
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-try:
-    if os.path.exists(ASSETS_PATH):
-        with open(ASSETS_PATH, "r") as f:
-            CRIME_DATA = json.load(f)
-        print(f"✅ Loaded {len(CRIME_DATA.get('incidents', []))} incidents from assets.")
-    else:
-        print(f"⚠️ WARNING: crimes.json not found at {ASSETS_PATH}. Run generate_data.py first!")
-except Exception as e:
-    print(f"❌ Error loading data: {e}")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError(
+        "Missing SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY in environment."
+    )
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # --- 3. HELPER FUNCTIONS ---
-def is_time_in_range(start: int, end: int, current: int) -> bool:
-    """
-    Checks if 'current' hour is between start and end.
-    Handles overnight ranges like 19-05 (7 PM to 5 AM).
-    """
-    if start < end:
-        return start <= current < end
-    else:
-        # Range crosses midnight (e.g., 19 to 5)
-        return current >= start or current < end
+def _fetch_dynamic_zones() -> List[Dict[str, Any]]:
+    response = (
+        supabase.table("dynamic_zones")
+        .select("id,risk_level,boundary")
+        .execute()
+    )
+    zones = response.data or []
+    if not isinstance(zones, list):
+        raise HTTPException(status_code=500, detail="Invalid zone payload from Supabase.")
+    return zones
 
 # --- 4. DATA MODELS ---
 class RouteRequest(BaseModel):
@@ -64,44 +66,14 @@ def get_danger_zones(simulated_hour: Optional[int] = None):
     Returns High-Risk Zones filtered by TIME.
     Usage: GET /zones?simulated_hour=22 (To test 'Night Mode')
     """
-    # 1. Determine Time
-    if simulated_hour is not None:
-        current_hour = simulated_hour
-    else:
-        current_hour = datetime.now().hour
-
-    # 2. Extract Data
-    incidents_list = CRIME_DATA.get("incidents", [])
-    active_zones = []
-
-    # 3. Filter Loop
-    for point in incidents_list:
-        # Validate coordinates
-        if "lat" not in point or "lng" not in point:
-            continue
-
-        # Check Active Hours
-        if "active_hours" in point:
-            try:
-                # Format "19-05" -> start=19, end=5
-                start_str, end_str = point["active_hours"].split("-")
-                start, end = int(start_str), int(end_str)
-                
-                # Only add if currently in danger window
-                if is_time_in_range(start, end, current_hour):
-                    active_zones.append(point)
-            except ValueError:
-                # If format is wrong, fail safe (include it)
-                active_zones.append(point)
-        else:
-            # No specific hours = Always Dangerous (e.g., Construction zones)
-            active_zones.append(point)
-    
-    return {
-        "server_time": f"{current_hour}:00",
-        "count": len(active_zones),
-        "zones": active_zones
-    }
+    current_hour = simulated_hour if simulated_hour is not None else datetime.now().hour
+    try:
+        zones = _fetch_dynamic_zones()
+        return {"server_time": f"{current_hour}:00", "count": len(zones), "zones": zones}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch zones: {exc}")
 
 @app.post("/get-safe-route")
 def calculate_safe_route(request: RouteRequest):
@@ -110,13 +82,22 @@ def calculate_safe_route(request: RouteRequest):
     """
     print(f"📍 Calculating Safe Route: {request.start_lat},{request.start_lng} -> {request.end_lat},{request.end_lng}")
     
-    # 1. Pass the request + Our Crime Database to the Engine
+    try:
+        dynamic_zones = _fetch_dynamic_zones()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch zones: {exc}")
+
     result = find_safest_route(
-        request.start_lat, 
-        request.start_lng, 
-        request.end_lat, 
-        request.end_lng, 
-        CRIME_DATA # We pass the loaded JSON data here
+        request.start_lat,
+        request.start_lng,
+        request.end_lat,
+        request.end_lng,
+        dynamic_zones,
     )
-    
+
+    if result.get("status") == "error":
+        raise HTTPException(status_code=500, detail=result.get("message", "Routing failed"))
+
     return result

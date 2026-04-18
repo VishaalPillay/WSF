@@ -23,8 +23,8 @@ class GeofenceService {
     bg.BackgroundGeolocation.onGeofence(_onGeofence);
 
     await bg.BackgroundGeolocation.ready(bg.Config(
-      desiredAccuracy: bg.Config.DESIRED_ACCURACY_HIGH,
-      distanceFilter: 10.0, // High-resolution tracking, pinging every 10 meters
+      desiredAccuracy: bg.Config.DESIRED_ACCURACY_MEDIUM,
+      distanceFilter: 25.0, // Reduced update frequency to lower UI/main-thread pressure
       stopOnTerminate: true,
       startOnBoot: false,
       debug: false, // Turn off BG logging popup
@@ -75,6 +75,10 @@ class GeofenceService {
     _expectedRoute = null;
     _driftTimer?.cancel();
     await bg.BackgroundGeolocation.stop();
+  }
+
+  void cancelDriftTimer() {
+    _driftTimer?.cancel();
   }
 
   void _onGeofence(bg.GeofenceEvent event) {

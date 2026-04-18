@@ -9,10 +9,10 @@ class MapboxService {
   Future<List<Map<String, dynamic>>> getSuggestions(String query) async {
     if (query.isEmpty) return [];
 
-    // Vellore BBOX: minLon,minLat,maxLon,maxLat
-    // Proximity: VIT Vellore (79.1559, 12.9692)
+    // Chennai/SRM BBOX: minLon,minLat,maxLon,maxLat
+    // Proximity: SRM University Kattankulathur (80.0444, 12.8230)
     final url = Uri.parse(
-        "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$_accessToken&autocomplete=true&limit=5&country=in&proximity=79.1559,12.9692&bbox=78.5,12.5,79.5,13.5");
+        "https://api.mapbox.com/geocoding/v5/mapbox.places/$query.json?access_token=$_accessToken&autocomplete=true&limit=5&country=in&proximity=80.0444,12.8230&bbox=79.80,12.60,80.40,13.35");
 
     try {
       final response = await http.get(url);

@@ -7,6 +7,14 @@ plugins {
 
 val backgroundGeolocation = project(":flutter_background_geolocation")
 apply(from = "${backgroundGeolocation.projectDir}/background_geolocation.gradle")
+
+configurations.all {
+    resolutionStrategy {
+        // Keep Location APIs compatible with flutter_background_geolocation runtime.
+        force("com.google.android.gms:play-services-location:20.0.0")
+    }
+}
+
 android {
     namespace = "com.example.mobile_app"
     compileSdk = flutter.compileSdkVersion
