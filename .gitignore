@@ -1,7 +1,13 @@
 # =========================
 # OPERATING SYSTEMS
 # =========================
-
+**/__pycache__/
+**/__pycache__/*.py[cod]
+**/__pycache__/*.pyo
+**/__pycache__/*.pyd
+**/__pycache__/*.pyc
+**/__pycache__/*.py
+__pycache__
 # macOS
 .DS_Store
 .AppleDouble
@@ -22,6 +28,7 @@ $RECYCLE.BIN/
 **/mobile-app/.flutter-plugins-dependencies
 **/mobile-app/.pub-cache/
 **/mobile-app/build/
+**/mobile-app/.env
 
 # iOS / Mac Specific (Flutter)
 **/mobile-app/ios/Flutter/Generated.xcconfig

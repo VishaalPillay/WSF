@@ -11,8 +11,10 @@ import 'package:mobile_app/services/mapbox_service.dart';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_app/services/audio_sentinel_service.dart';
-import 'package:geolocator/geolocator.dart'
-    as geo; // ✅ Aliased to avoid conflict
+import 'package:flutter_background_geolocation/flutter_background_geolocation.dart' as bg;
+import 'package:mobile_app/services/geofence_service.dart';
+import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -54,10 +56,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // State Variables
   bool _isRouteActive = false;
+  bool _isTracking = false;
   bool _isInputExpanded = false;
   bool _isNightMode = false;
   int _riskScore = 0;
   double _durationMin = 0;
+
+  List<Position> _currentRouteGeometry = [];
+  String? _activeTripId;
 
   // ✅ NEW: Zone Logic Variables
   List<dynamic> _activeZones = []; // Stores current zones for calculation
@@ -75,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _startController.text = "Current Location";
     _requestPermissions();
     _initAudioSentinel();
-    _startLocationTracking(); // ✅ Start tracking "Blue Dot" logic
+    _initBackgroundTracking(); // ✅ Start native tracking wrappers
   }
 
   @override
@@ -107,84 +113,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() {});
   }
 
-  // ✅ NEW: Location Tracking & Safety Check Logic
-  void _startLocationTracking() {
-    const geo.LocationSettings locationSettings = geo.LocationSettings(
-      accuracy: geo.LocationAccuracy.high,
-      distanceFilter: 10, // Update every 10 meters
-    );
-
-    geo.Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-      (geo.Position position) {
-        // Update user location variable if needed
-        _startLat = position.latitude;
-        _startLng = position.longitude;
-
-        // Check if user is inside any danger zone
-        _checkZoneSafety(position);
-      },
-    );
-  }
-
-  // ✅ NEW: Check if "Blue Dot" is inside a Red/Yellow Zone
-  void _checkZoneSafety(geo.Position userPos) {
-    bool inDanger = false;
-    String severity = "LOW";
-
-    // Iterate through loaded zones
-    for (var zone in _activeZones) {
-      if (zone['lat'] != null && zone['lng'] != null) {
-        double zoneLat = zone['lat'];
-        double zoneLng = zone['lng'];
-
-        // Calculate distance between User and Zone Center
-        double distanceInMeters = geo.Geolocator.distanceBetween(
-          userPos.latitude,
-          userPos.longitude,
-          zoneLat,
-          zoneLng,
-        );
-
-        // Check if inside the 300m radius
-        if (distanceInMeters <= 300) {
-          inDanger = true;
-          severity = zone['severity'] ?? "HIGH";
-          break; // Found a zone, break loop
-        }
-      }
-    }
-
-    // Update UI based on result
-    if (mounted) {
-      setState(() {
-        if (inDanger) {
-          if (severity == "MODERATE") {
-            _safetyStatusTitle = "CAUTION ADVISED";
-            _safetyStatusSubtitle = "Entered Moderate Risk Zone";
-            _safetyGradient = [
-              const Color(0xFFF2994A),
-              const Color(0xFFF2C94C)
-            ]; // Orange/Yellow
-            _safetyIcon = Icons.warning_amber_rounded;
-          } else {
-            _safetyStatusTitle = "DANGER DETECTED";
-            _safetyStatusSubtitle = "You are in a High Risk Zone";
-            _safetyGradient = [
-              const Color(0xFFCB2D3E),
-              const Color(0xFFEF473A)
-            ]; // Red
-            _safetyIcon = Icons.report_problem_rounded;
+  // ✅ NEW: Geofence OS Tracking Engine
+  void _initBackgroundTracking() async {
+    final geofenceService = GeofenceService();
+    
+    geofenceService.onDangerZoneTrigger = (bg.GeofenceEvent event) {
+      if (mounted) {
+        setState(() {
+          if (event.action == "ENTER") {
+            String severity = event.extras != null && event.extras!['risk_level'] != null 
+                ? event.extras!['risk_level'] 
+                : "red";
+                
+            if (severity == "yellow" || severity == "MODERATE") {
+              _safetyStatusTitle = "CAUTION ADVISED";
+              _safetyStatusSubtitle = "Entered Moderate Risk Zone";
+              _safetyGradient = [const Color(0xFFF2994A), const Color(0xFFF2C94C)];
+              _safetyIcon = Icons.warning_amber_rounded;
+            } else {
+              _safetyStatusTitle = "DANGER DETECTED";
+              _safetyStatusSubtitle = "You are in a High Risk Zone!";
+              _safetyGradient = [const Color(0xFFCB2D3E), const Color(0xFFEF473A)];
+              _safetyIcon = Icons.report_problem_rounded;
+            }
+          } else if (event.action == "EXIT") {
+            _safetyStatusTitle = "SENTRA ACTIVE";
+            _safetyStatusSubtitle = "You are in a Safe Zone";
+            _safetyGradient = _isNightMode
+                ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
+                : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)];
+            _safetyIcon = Icons.shield_moon;
           }
-        } else {
-          _safetyStatusTitle = "SENTRA ACTIVE";
-          _safetyStatusSubtitle = "You are in a Safe Zone";
-          _safetyGradient = _isNightMode
-              ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
-              : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)];
-          _safetyIcon = Icons.shield_moon;
-        }
-      });
-    }
+        });
+      }
+    };
+    
+    geofenceService.onDriftAlert = () {
+       if (mounted) {
+         _showDriftOverlay();
+       }
+    };
+    
+    await geofenceService.initialize();
   }
 
   _onMapCreated(MapboxMap mapboxMap) {
@@ -214,29 +184,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // --- DANGER ZONES ---
-  List<Position> _createGeoJSONCircle(
-    double centerLat,
-    double centerLng,
-    double radiusInMeters,
-  ) {
-    int points = 64;
-    List<Position> coordinates = [];
-    double earthRadius = 6371000.0;
-    for (int i = 0; i < points; i++) {
-      double angle = (i * 360 / points) * (math.pi / 180);
-      double latOffset = (radiusInMeters / earthRadius) * (180 / math.pi);
-      double lngOffset = (radiusInMeters / earthRadius) *
-          (180 / math.pi) /
-          math.cos(centerLat * math.pi / 180);
-      double pLat = centerLat + (latOffset * math.sin(angle));
-      double pLng = centerLng + (lngOffset * math.cos(angle));
-      coordinates.add(Position(pLng, pLat));
-    }
-    coordinates.add(coordinates.first);
-    return coordinates;
-  }
-
   Future<void> _loadDangerZones() async {
+    // Only use simulated time if you add temporal logic to get_active_zones
     int simulatedTime = _isNightMode ? 22 : 10;
     await _polygonManager?.deleteAll();
 
@@ -244,39 +193,85 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       simulatedHour: simulatedTime,
     );
 
-    // ✅ NEW: Store raw zones for distance calculation
+    // ✅ NEW: Store raw zones for OS Geofencing
     _activeZones = zones;
-
-    // Trigger an immediate check in case user is already in one
-    geo.Position? currentPos = await geo.Geolocator.getLastKnownPosition();
-    if (currentPos != null) _checkZoneSafety(currentPos);
+    GeofenceService().setupPolygons(_activeZones);
 
     if (zones.isEmpty) return;
 
     List<PolygonAnnotationOptions> polygonOptions = [];
     for (var zone in zones) {
-      if (zone['lat'] != null && zone['lng'] != null) {
-        String severity = zone['severity'] ?? 'HIGH';
-        int activeFillColor = severity == 'MODERATE'
-            ? Colors.amber.withOpacity(0.25).value
-            : Colors.red.withOpacity(0.25).value;
-        int activeStrokeColor = severity == 'MODERATE'
+      if (zone['boundary'] != null) {
+        String severity = zone['risk_level'] ?? 'red';
+        
+        // Render Red Zones with 40% Opacity
+        int activeFillColor = severity == 'yellow'
+            ? Colors.amber.withOpacity(0.40).value
+            : Colors.red.withOpacity(0.40).value;
+        int activeStrokeColor = severity == 'yellow'
             ? Colors.amber.withOpacity(0.8).value
             : Colors.red.withOpacity(0.8).value;
-        final geometry = _createGeoJSONCircle(zone['lat'], zone['lng'], 300);
-        polygonOptions.add(
-          PolygonAnnotationOptions(
-            geometry: Polygon(coordinates: [geometry]),
-            fillColor: activeFillColor,
-            fillOutlineColor: activeStrokeColor,
-          ),
-        );
+            
+        final boundary = zone['boundary'];
+        
+        if (boundary['type'] == 'Polygon') {
+            List<dynamic> ringData = boundary['coordinates'][0];
+            List<Position> geomPoints = ringData.map((pt) {
+              return Position(pt[0].toDouble(), pt[1].toDouble());
+            }).toList();
+            
+            polygonOptions.add(
+              PolygonAnnotationOptions(
+                geometry: Polygon(coordinates: [geomPoints]),
+                fillColor: activeFillColor,
+                fillOutlineColor: activeStrokeColor,
+              ),
+            );
+        } else if (boundary['type'] == 'MultiPolygon') {
+             List<dynamic> polygons = boundary['coordinates'];
+             for (var poly in polygons) {
+                 List<dynamic> ringData = poly[0];
+                 List<Position> geomPoints = ringData.map((pt) {
+                   return Position(pt[0].toDouble(), pt[1].toDouble());
+                 }).toList();
+                 
+                 polygonOptions.add(
+                     PolygonAnnotationOptions(
+                         geometry: Polygon(coordinates: [geomPoints]),
+                         fillColor: activeFillColor,
+                         fillOutlineColor: activeStrokeColor,
+                     )
+                 );
+             }
+        }
       }
     }
     await _polygonManager?.createMulti(polygonOptions);
   }
 
   // --- SOS LOGIC ---
+  void _showDriftOverlay() async {
+    bool isSafe = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.95),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return const DriftSosOverlay();
+      },
+    ) ?? false;
+
+    if (!isSafe && _activeTripId != null) {
+      // User didn't answer within 15 seconds!
+      try {
+        await Supabase.instance.client.from('trips').update({'status': 'sos'}).eq('id', _activeTripId as String);
+      } catch (e) {
+        print("Failed to dispatch SOS to Db: $e");
+      }
+      _handleSosSequence(triggerReason: "No response after straying from expected route.");
+    }
+  }
+
   void _handleSosSequence({String? triggerReason}) async {
     bool shouldSend = await showDialog(
           context: context,
@@ -439,8 +434,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       setState(() {
         _isRouteActive = true;
+        _isTracking = false;
         _riskScore = 100 - safetyScore;
         _durationMin = duration;
+        _currentRouteGeometry = routeGeometry;
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -767,29 +764,91 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(20),
-              child: ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _isRouteActive = false;
-                    _isInputExpanded = false;
-                    _destinationController.clear();
-                    _polylineManager?.deleteAll();
-                    _pointManager?.deleteAll();
-                  });
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black87,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _isRouteActive = false;
+                          _isTracking = false;
+                          _isInputExpanded = false;
+                          _destinationController.clear();
+                          _polylineManager?.deleteAll();
+                          _pointManager?.deleteAll();
+                          GeofenceService().stopTripTracker();
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[200],
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        "Cancel",
+                        style: GoogleFonts.poppins(
+                            color: Colors.black87, fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   ),
-                ),
-                child: Text(
-                  "Clear Route",
-                  style: GoogleFonts.poppins(
-                      color: Colors.white, fontWeight: FontWeight.w600),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (_isTracking) {
+                           // End Trip
+                           setState(() {
+                             _isTracking = false;
+                             _isRouteActive = false;
+                             _isInputExpanded = false;
+                             _destinationController.clear();
+                             _polylineManager?.deleteAll();
+                             _pointManager?.deleteAll();
+                           });
+                           GeofenceService().stopTripTracker();
+                           if (_activeTripId != null) {
+                             await Supabase.instance.client.from('trips').update({'status': 'completed'}).eq('id', _activeTripId as String);
+                             _activeTripId = null;
+                           }
+                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Arrived. Trip Ended.")));
+                        } else {
+                           // Start Trip
+                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Generating Secure Escort Trip...")));
+                           try {
+                             final response = await Supabase.instance.client.from('trips').insert({
+                               'user_id': "mac_user_01",
+                               'status': 'active'
+                             }).select('id').single();
+                             
+                             _activeTripId = response['id'];
+                             setState(() {
+                               _isTracking = true;
+                             });
+                             GeofenceService().startTripTracker(_activeTripId!, _currentRouteGeometry);
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Tracking Active! Trip ID: ${_activeTripId!.substring(0, 8)}"), backgroundColor: Colors.green));
+                           } catch (e) {
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to start trip: $e")));
+                           }
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isTracking ? Colors.redAccent : Colors.black87,
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        _isTracking ? "End Trip" : "Start Trip",
+                        style: GoogleFonts.poppins(
+                            color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1296,6 +1355,102 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
           ],
         ),
       ),
+    );
+  }
+}
+
+class DriftSosOverlay extends StatefulWidget {
+  const DriftSosOverlay({super.key});
+
+  @override
+  State<DriftSosOverlay> createState() => _DriftSosOverlayState();
+}
+
+class _DriftSosOverlayState extends State<DriftSosOverlay> {
+  int _countdown = 15;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _triggerHaptics();
+    
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _triggerHaptics();
+      setState(() {
+        if (_countdown > 1) {
+          _countdown--;
+        } else {
+          _timer?.cancel();
+          Navigator.of(context).pop(false);
+        }
+      });
+    });
+  }
+
+  void _triggerHaptics() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 200), () {
+      HapticFeedback.heavyImpact();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.warning_rounded, color: Colors.redAccent, size: 80),
+              const SizedBox(height: 20),
+              Text(
+                  "ARE YOU SAFE?", 
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)
+              ),
+              const SizedBox(height: 10),
+              Text(
+                  "You strayed from your requested path.\nIf you do not respond, we will trigger an SOS dispatch.", 
+                  textAlign: TextAlign.center, 
+                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 16)
+              ),
+              const SizedBox(height: 50),
+              Text(
+                  "$_countdown", 
+                  style: GoogleFonts.poppins(color: Colors.redAccent, fontSize: 100, fontWeight: FontWeight.w900)
+              ),
+              const SizedBox(height: 50),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    _timer?.cancel();
+                    Navigator.of(context).pop(true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green, 
+                      padding: const EdgeInsets.symmetric(vertical: 20), 
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+                  ),
+                  child: Text(
+                      "I AM SAFE", 
+                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
+                  )
+                ),
+              ),
+            ]
+          ),
+        )
+      )
     );
   }
 }

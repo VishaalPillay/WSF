@@ -1,30 +1,19 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart'; //
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ApiService {
   // Base URL is now dynamic based on environment
   final String _baseUrl = dotenv.env['BACKEND_API_BASE_URL'] ?? 'http://localhost:8000';
+  final _supabase = Supabase.instance.client;
 
   Future<List<dynamic>> getDangerZones({int? simulatedHour}) async {
-    String urlString = '$_baseUrl/zones';
-    if (simulatedHour != null) {
-      urlString += '?simulated_hour=$simulatedHour';
-    }
-
-    final url = Uri.parse(urlString);
-
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['zones'] ?? [];
-      } else {
-        print('⚠️ Zone Error: ${response.statusCode}');
-        return [];
-      }
+      final response = await _supabase.rpc('get_active_zones');
+      return response as List<dynamic>;
     } catch (e) {
-      print('❌ Connection Error: $e');
+      print('❌ Zone Fetch Error: $e');
       return [];
     }
   }
