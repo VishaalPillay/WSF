@@ -32,12 +32,15 @@ def _zone_penalty(zone: Dict) -> int:
 
 def analyze_route_safety(route_geometry: List[tuple], dynamic_zones: List[Dict]) -> Dict:
     """
-    Scores a route by checking shapely LineString intersections
+    Scores a route by checking shapely LineString proximity and intersections
     against dynamic zone polygons fetched from Supabase.
     """
     route_line = LineString([(lng, lat) for lat, lng in route_geometry])
     risk_score = 0
     detected_zones = []
+
+    PROXIMITY_THRESHOLD_DEG = 0.00045  # ~50 meters in degrees
+    PROXIMITY_PENALTY = 50
 
     for zone in dynamic_zones:
         zone_id = zone.get("id")
@@ -50,8 +53,15 @@ def analyze_route_safety(route_geometry: List[tuple], dynamic_zones: List[Dict])
         except (TypeError, ValueError, GEOSException):
             continue
 
+        distance = route_line.distance(zone_geom)
+
         if route_line.intersects(zone_geom):
+            # Route physically crosses the zone — standard zone penalty
             risk_score += _zone_penalty(zone)
+            detected_zones.append(zone_id)
+        elif distance < PROXIMITY_THRESHOLD_DEG:
+            # Route passes within ~50m of a danger zone — strict proximity penalty
+            risk_score += PROXIMITY_PENALTY
             detected_zones.append(zone_id)
 
     final_score = max(10, 100 - risk_score)
@@ -96,10 +106,14 @@ def find_safest_route(start_lat, start_lng, end_lat, end_lng, dynamic_zones):
             })
             
         scored_routes.sort(key=lambda x: (-x["safety_score"], x["duration"]))
-        
+
+        winning_route = scored_routes[0]
+        is_route_safe = winning_route["safety_score"] >= 50
+
         return {
             "status": "success",
-            "recommended_route": scored_routes[0],
+            "is_route_safe": is_route_safe,
+            "recommended_route": winning_route,
             "alternatives": scored_routes[1:],
         }
         
