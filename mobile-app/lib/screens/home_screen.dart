@@ -1,10 +1,10 @@
-import 'dart:math' as math;
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 // 1. HIDE 'Size' from Mapbox to avoid conflict with Flutter's Size
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' hide Size;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sliding_up_panel/sliding_up_panel.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mobile_app/theme/sentra_design.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:mobile_app/services/api_service.dart';
 import 'package:mobile_app/services/mapbox_service.dart';
@@ -53,13 +53,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // Suggestions State
   List<Map<String, dynamic>> _suggestions = [];
-  bool _isSearching = false;
 
   // State Variables
   bool _isRouteActive = false;
   bool _isTracking = false;
   bool _isInputExpanded = false;
   bool _isNightMode = false;
+  bool _isRouteSafe = true;
   int _riskScore = 0;
   double _durationMin = 0;
 
@@ -73,11 +73,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<dynamic> _activeZones = []; // Stores current zones for calculation
   String _safetyStatusTitle = "SENTRA ACTIVE";
   String _safetyStatusSubtitle = "You are in a Safe Zone";
-  List<Color> _safetyGradient = [
-    const Color(0xFF2C3E50),
-    const Color(0xFF4CA1AF)
-  ]; // Default Green/Blue
+  Color _safetyPanelBg = SentraDesign.uberBlack;
+  Color _safetyPrimaryText = SentraDesign.pureWhite;
+  Color _safetySecondaryText = const Color(0xB3FFFFFF);
+  Color _safetyIconColor = SentraDesign.pureWhite;
   IconData _safetyIcon = Icons.shield_moon;
+
+  int _navIndex = 0;
 
   @override
   void initState() {
@@ -157,20 +159,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             if (severity == "yellow" || severity == "MODERATE") {
               _safetyStatusTitle = "CAUTION ADVISED";
               _safetyStatusSubtitle = "Entered Moderate Risk Zone";
-              _safetyGradient = [const Color(0xFFF2994A), const Color(0xFFF2C94C)];
+              _safetyPanelBg = SentraDesign.chipGray;
+              _safetyPrimaryText = SentraDesign.uberBlack;
+              _safetySecondaryText = SentraDesign.bodyGray;
+              _safetyIconColor = SentraDesign.uberBlack;
               _safetyIcon = Icons.warning_amber_rounded;
             } else {
               _safetyStatusTitle = "DANGER DETECTED";
               _safetyStatusSubtitle = "You are in a High Risk Zone!";
-              _safetyGradient = [const Color(0xFFCB2D3E), const Color(0xFFEF473A)];
+              _safetyPanelBg = SentraDesign.uberBlack;
+              _safetyPrimaryText = SentraDesign.pureWhite;
+              _safetySecondaryText = const Color(0xB3FFFFFF);
+              _safetyIconColor = SentraDesign.pureWhite;
               _safetyIcon = Icons.report_problem_rounded;
             }
           } else if (event.action == "EXIT") {
             _safetyStatusTitle = "SENTRA ACTIVE";
             _safetyStatusSubtitle = "You are in a Safe Zone";
-            _safetyGradient = _isNightMode
-                ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
-                : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)];
+            _safetyPanelBg = SentraDesign.uberBlack;
+            _safetyPrimaryText = SentraDesign.pureWhite;
+            _safetySecondaryText = const Color(0xB3FFFFFF);
+            _safetyIconColor = SentraDesign.pureWhite;
             _safetyIcon = Icons.shield_moon;
           }
         });
@@ -316,7 +325,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("SOS Cancelled"),
-          backgroundColor: Colors.green,
         ),
       );
     }
@@ -331,7 +339,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text("Opening SMS App..."),
-        backgroundColor: Colors.redAccent,
         duration: Duration(seconds: 2),
       ),
     );
@@ -347,7 +354,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Could not launch SMS app."),
-          backgroundColor: Colors.red,
         ),
       );
     }
@@ -382,7 +388,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Emergency override activated. Security dispatched."),
-          backgroundColor: Colors.red,
         ),
       );
     } catch (e) {
@@ -419,12 +424,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         setState(() => _suggestions = []);
         return;
       }
-      setState(() => _isSearching = true);
       final results = await _mapboxService.getSuggestions(query);
       if (mounted) {
         setState(() {
           _suggestions = results;
-          _isSearching = false;
         });
       }
     });
@@ -478,6 +481,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final String encodedPolyline = route['route_geometry'];
       final int safetyScore = route['safety_score'];
       final double duration = route['duration'] / 60;
+      // Read the is_route_safe flag from the backend response
+      final bool routeSafe = result['is_route_safe'] ?? true;
 
       PolylinePoints polylinePoints = PolylinePoints();
       List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(
@@ -486,10 +491,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       List<Position> routeGeometry =
           decodedPoints.map((p) => Position(p.longitude, p.latitude)).toList();
 
+      // Render polyline in RED if route is unsafe, BLUE if safe
       _polylineManager?.create(
         PolylineAnnotationOptions(
           geometry: LineString(coordinates: routeGeometry),
-          lineColor: Colors.blueAccent.value,
+          lineColor: routeSafe ? Colors.blueAccent.value : Colors.redAccent.value,
           lineWidth: 6.0,
           lineJoin: LineJoin.ROUND,
         ),
@@ -506,6 +512,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       setState(() {
         _isRouteActive = true;
         _isTracking = false;
+        _isRouteSafe = routeSafe;
         _riskScore = 100 - safetyScore;
         _durationMin = duration;
         _currentRouteGeometry = routeGeometry;
@@ -521,9 +528,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _isNightMode = !_isNightMode;
       // Reset to safe default until new zones load
       if (!_activeZones.any((z) => z['severity'] != null)) {
-        _safetyGradient = _isNightMode
-            ? [const Color(0xFF0F2027), const Color(0xFF203A43)]
-            : [const Color(0xFF2C3E50), const Color(0xFF4CA1AF)];
+        _safetyPanelBg = SentraDesign.uberBlack;
+        _safetyPrimaryText = SentraDesign.pureWhite;
+        _safetySecondaryText = const Color(0xB3FFFFFF);
+        _safetyIconColor = SentraDesign.pureWhite;
       }
     });
 
@@ -589,15 +597,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               : 55,
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            color: SentraDesign.pureWhite,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: SentraDesign.uberBlack, width: 1),
+            boxShadow: SentraDesign.cardShadow,
           ),
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
@@ -617,12 +620,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Row(
       key: const ValueKey("collapsed"),
       children: [
-        const Icon(Icons.search, color: Color(0xFFFF4081), size: 24),
+        const Icon(Icons.search, color: SentraDesign.uberBlack, size: 24),
         const SizedBox(width: 15),
         Text(
           "Where to?",
-          style: GoogleFonts.poppins(
-            color: Colors.black87,
+          style: GoogleFonts.inter(
+            color: SentraDesign.uberBlack,
             fontWeight: FontWeight.w600,
             fontSize: 15,
           ),
@@ -631,13 +634,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Container(
           padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
-            color: Colors.grey[100],
+            color: SentraDesign.chipGray,
             shape: BoxShape.circle,
           ),
           child: Icon(
             _audioSentinel.isListening ? Icons.mic : Icons.mic_off,
             size: 18,
-            color: _audioSentinel.isListening ? Colors.redAccent : Colors.grey,
+            color: _audioSentinel.isListening
+                ? SentraDesign.uberBlack
+                : SentraDesign.mutedGray,
           ),
         ),
       ],
@@ -660,16 +665,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 _suggestions = [];
               },
               child:
-                  const Icon(Icons.arrow_back, color: Colors.black87, size: 20),
+                  const Icon(Icons.arrow_back, color: SentraDesign.uberBlack, size: 20),
             ),
             const SizedBox(width: 10),
             Column(
               children: [
-                const Icon(Icons.circle, color: Colors.blue, size: 10),
+                const Icon(Icons.circle, color: SentraDesign.uberBlack, size: 10),
                 Container(
                   height: 20,
                   width: 2,
-                  color: Colors.grey[300],
+                  color: SentraDesign.hoverGray,
                   margin: const EdgeInsets.symmetric(vertical: 2),
                 ),
               ],
@@ -682,23 +687,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 onChanged: (val) => _onSearchChanged(val, true),
                 decoration: InputDecoration(
                   hintText: "Start Location",
-                  hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                  hintStyle: GoogleFonts.inter(color: SentraDesign.mutedGray),
                   border: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                     fontWeight: FontWeight.w500, fontSize: 14),
               ),
             ),
           ],
         ),
-        Divider(color: Colors.grey[200], height: 20, thickness: 1),
+        Divider(color: SentraDesign.hoverGray, height: 20, thickness: 1),
         Row(
           children: [
             const SizedBox(width: 30),
             const Icon(Icons.location_on_rounded,
-                color: Color(0xFFFF4081), size: 16),
+                color: SentraDesign.uberBlack, size: 16),
             const SizedBox(width: 10),
             Expanded(
               child: TextField(
@@ -708,17 +713,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: "Where to?",
-                  hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                  hintStyle: GoogleFonts.inter(color: SentraDesign.mutedGray),
                   border: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                     fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.map_outlined, color: Colors.blue),
+              icon: const Icon(Icons.map_outlined, color: SentraDesign.uberBlack),
               tooltip: "Choose on Map",
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -730,7 +735,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const SnackBar(
                     content: Text("Tap on the map to select destination"),
                     duration: Duration(seconds: 2),
-                    backgroundColor: Colors.blue,
                   ),
                 );
               },
@@ -758,7 +762,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             suggestion['place_name'] ?? "",
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.poppins(fontSize: 13),
+            style: GoogleFonts.inter(fontSize: 13),
           ),
           onTap: () {
             bool isStart = _startFocus.hasFocus;
@@ -778,13 +782,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               width: double.infinity,
               height: 100,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: _riskScore > 50
-                      ? [const Color(0xFFCB2D3E), const Color(0xFFEF473A)]
-                      : [const Color(0xFF11998e), const Color(0xFF38ef7d)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: _riskScore > 50
+                    ? SentraDesign.chipGray
+                    : SentraDesign.uberBlack,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24),
                   topRight: Radius.circular(24),
@@ -800,8 +800,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     children: [
                       Text(
                         _riskScore > 50 ? "CAUTION ADVISED" : "SAFEST ROUTE",
-                        style: GoogleFonts.poppins(
-                          color: Colors.white70,
+                        style: GoogleFonts.inter(
+                          color: _riskScore > 50
+                              ? SentraDesign.bodyGray
+                              : const Color(0xB3FFFFFF),
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.2,
@@ -809,29 +811,64 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                       Text(
                         "${_durationMin.toStringAsFixed(0)} mins • Risk: $_riskScore%",
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
+                        style: GoogleFonts.inter(
+                          color: _riskScore > 50
+                              ? SentraDesign.uberBlack
+                              : SentraDesign.pureWhite,
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
                   ),
-                  const Icon(Icons.directions_walk,
-                      color: Colors.white, size: 40),
+                  Icon(
+                    Icons.directions_walk,
+                    color: _riskScore > 50
+                        ? SentraDesign.uberBlack
+                        : SentraDesign.pureWhite,
+                    size: 40,
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
+            // WARNING banner when the route is flagged as unsafe by the backend
+            if (!_isRouteSafe)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.redAccent, width: 1.2),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "WARNING: Path intersects known threat zones",
+                        style: GoogleFonts.inter(
+                          color: Colors.redAccent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (!_isRouteSafe) const SizedBox(height: 12),
             ListTile(
-              leading: const Icon(Icons.info_outline, color: Colors.blue),
+              leading: const Icon(Icons.info_outline, color: SentraDesign.uberBlack),
               title: Text(
                 "Route Details",
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
                 "This path avoids ${_riskScore > 0 ? 'detected high-crime zones' : 'all known danger zones'}.",
-                style: GoogleFonts.poppins(fontSize: 12),
+                style: GoogleFonts.inter(fontSize: 12),
               ),
             ),
             Padding(
@@ -852,16 +889,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         });
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[200],
+                        backgroundColor: SentraDesign.pureWhite,
+                        foregroundColor: SentraDesign.uberBlack,
                         minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: const StadiumBorder(),
+                        side: const BorderSide(color: SentraDesign.uberBlack),
+                        elevation: 0,
                       ),
-                      child: Text(
+                        child: Text(
                         "Cancel",
-                        style: GoogleFonts.poppins(
-                            color: Colors.black87, fontWeight: FontWeight.w600),
+                        style: GoogleFonts.inter(
+                            color: SentraDesign.uberBlack,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -889,16 +928,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                            // Start Trip
                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Generating Secure Escort Trip...")));
                            try {
-                             final userId = Supabase.instance.client.auth.currentUser?.id;
-                             if (userId == null) {
+                             if (Supabase.instance.client.auth.currentUser == null) {
                                ScaffoldMessenger.of(context).showSnackBar(
                                  const SnackBar(content: Text("Please sign in to start a trip.")),
                                );
                                return;
                              }
+                             final expectedArrival = DateTime.now()
+                                 .add(Duration(minutes: _durationMin.toInt()))
+                                 .toIso8601String();
                              final response = await Supabase.instance.client.from('trips').insert({
-                               'user_id': userId,
-                               'status': 'active'
+                               'user_id': Supabase.instance.client.auth.currentUser!.id,
+                               'status': 'active',
+                               'start_location': 'SRID=4326;POINT($_startLng $_startLat)',
+                               'destination': 'SRID=4326;POINT($_destLng $_destLat)',
+                               'expected_arrival': expectedArrival,
                              }).select('id').single();
                              
                              _activeTripId = response['id'];
@@ -906,22 +950,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                _isTracking = true;
                              });
                              GeofenceService().startTripTracker(_activeTripId!, _currentRouteGeometry);
-                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Tracking Active! Trip ID: ${_activeTripId!.substring(0, 8)}"), backgroundColor: Colors.green));
+                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Tracking Active! Trip ID: ${_activeTripId!.substring(0, 8)}")));
                            } catch (e) {
                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to start trip: $e")));
-                           }
-                        }
-                      },
+                            }
+                         }
+                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _isTracking ? Colors.redAccent : Colors.black87,
+                        backgroundColor: _isTracking
+                            ? SentraDesign.bodyGray
+                            : SentraDesign.uberBlack,
+                        foregroundColor: SentraDesign.pureWhite,
                         minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: const StadiumBorder(),
+                        elevation: 0,
                       ),
                       child: Text(
                         _isTracking ? "End Trip" : "Start Trip",
-                        style: GoogleFonts.poppins(
+                        style: GoogleFonts.inter(
                             color: Colors.white, fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -944,11 +990,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             width: double.infinity,
             height: 90,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: _safetyGradient, // ✅ Dynamic Colors
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: _safetyPanelBg,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(24),
                 topRight: Radius.circular(24),
@@ -965,12 +1007,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     Row(
                       children: [
                         Icon(_safetyIcon,
-                            color: Colors.white, size: 18), // ✅ Dynamic Icon
+                            color: _safetyIconColor, size: 18), // ✅ Dynamic Icon
                         const SizedBox(width: 8),
                         Text(
                           _safetyStatusTitle, // ✅ Dynamic Title
-                          style: GoogleFonts.poppins(
-                            color: Colors.white70,
+                          style: GoogleFonts.inter(
+                            color: _safetySecondaryText,
                             fontSize: 12,
                             letterSpacing: 1.5,
                             fontWeight: FontWeight.w600,
@@ -981,16 +1023,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     const SizedBox(height: 4),
                     Text(
                       _safetyStatusSubtitle, // ✅ Dynamic Subtitle
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
+                      style: GoogleFonts.inter(
+                        color: _safetyPrimaryText,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
                 ),
-                const Icon(Icons.battery_saver,
-                    color: Colors.white70, size: 28),
+                Icon(Icons.battery_saver,
+                    color: _safetySecondaryText, size: 28),
               ],
             ),
           ),
@@ -1005,7 +1047,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               children: [
                 Text(
                   "Simulation Mode",
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: Colors.grey[600],
@@ -1037,7 +1079,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               child: Center(
                                 child: Text(
                                   "Day Time",
-                                  style: GoogleFonts.poppins(
+                                  style: GoogleFonts.inter(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color: !_isNightMode
@@ -1051,7 +1093,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               child: Center(
                                 child: Text(
                                   "Night Time",
-                                  style: GoogleFonts.poppins(
+                                  style: GoogleFonts.inter(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color: _isNightMode
@@ -1074,25 +1116,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             height: 45,
                             margin: const EdgeInsets.symmetric(horizontal: 5),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: _isNightMode
-                                    ? [
-                                        const Color(0xFF2b5876),
-                                        const Color(0xFF4e4376)
-                                      ]
-                                    : [
-                                        const Color(0xFFF2994A),
-                                        const Color(0xFFF2C94C)
-                                      ],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
+                              color: SentraDesign.uberBlack,
                               borderRadius: BorderRadius.circular(25),
                               boxShadow: [
                                 BoxShadow(
-                                  color: _isNightMode
-                                      ? Colors.purple.withOpacity(0.3)
-                                      : Colors.orange.withOpacity(0.3),
+                                  color: Colors.black.withOpacity(0.12),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -1105,14 +1133,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   _isNightMode
                                       ? Icons.nights_stay_rounded
                                       : Icons.wb_sunny_rounded,
-                                  color: Colors.white,
+                                  color: SentraDesign.pureWhite,
                                   size: 20,
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
                                   _isNightMode ? "Night View" : "Day View",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.white,
+                                  style: GoogleFonts.inter(
+                                    color: SentraDesign.pureWhite,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
@@ -1138,7 +1166,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               children: [
                 Text(
                   "Safe Havens Nearby",
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -1157,6 +1185,87 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  Future<void> _showProfileSheet() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    String? fullName;
+    try {
+      if (user != null) {
+        final row = await Supabase.instance.client
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .maybeSingle();
+        fullName = row?['full_name'] as String?;
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: SentraDesign.pureWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Account',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: SentraDesign.uberBlack,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  fullName ?? '—',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: SentraDesign.uberBlack,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  user?.phone ?? user?.email ?? '—',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: SentraDesign.bodyGray,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'ID: ${user?.id ?? "—"}',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: SentraDesign.mutedGray,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await Supabase.instance.client.auth.signOut();
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                    },
+                    child: const Text('Sign out'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildNavBar() {
     return Container(
       decoration: BoxDecoration(
@@ -1170,32 +1279,59 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       child: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
+        currentIndex: _navIndex,
+        backgroundColor: SentraDesign.pureWhite,
         elevation: 0,
-        selectedItemColor: const Color(0xFFFF4081),
-        unselectedItemColor: Colors.grey[400],
+        selectedItemColor: SentraDesign.uberBlack,
+        unselectedItemColor: SentraDesign.mutedGray,
         showUnselectedLabels: true,
-        selectedLabelStyle: GoogleFonts.poppins(
+        selectedLabelStyle: GoogleFonts.inter(
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+        unselectedLabelStyle: GoogleFonts.inter(fontSize: 12),
         onTap: (index) {
+          setState(() => _navIndex = index);
           if (index == 1) {
             _handleSosSequence();
+          } else if (index == 2) {
+            _showProfileSheet();
           }
         },
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_rounded, size: 28),
+            icon: Icon(
+              Icons.home_rounded,
+              size: 28,
+              color: _navIndex == 0
+                  ? SentraDesign.uberBlack
+                  : SentraDesign.mutedGray,
+            ),
             label: "Home",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.emergency_rounded, color: Colors.red, size: 36),
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: SentraDesign.uberBlack,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.emergency_rounded,
+                color: SentraDesign.pureWhite,
+                size: 28,
+              ),
+            ),
             label: "SOS",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person_rounded, size: 28),
+            icon: Icon(
+              Icons.person_rounded,
+              size: 28,
+              color: _navIndex == 2
+                  ? SentraDesign.uberBlack
+                  : SentraDesign.mutedGray,
+            ),
             label: "Profile",
           ),
         ],
@@ -1210,24 +1346,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: SentraDesign.cardShadow,
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.green[50],
+              color: SentraDesign.chipGray,
               borderRadius: BorderRadius.circular(10),
             ),
             child:
-                Icon(Icons.store_rounded, color: Colors.green[700], size: 22),
+                const Icon(Icons.store_rounded, color: SentraDesign.uberBlack, size: 22),
           ),
           const SizedBox(width: 15),
           Column(
@@ -1235,7 +1365,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             children: [
               Text(
                 title,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
                 ),
@@ -1243,7 +1373,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.inter(
                   fontSize: 12,
                   color: Colors.grey[600],
                 ),
@@ -1328,26 +1458,20 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.redAccent,
+                color: SentraDesign.uberBlack,
                 borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.redAccent.withOpacity(0.5),
-                    blurRadius: 20,
-                    spreadRadius: 5,
-                  ),
-                ],
+                boxShadow: SentraDesign.cardShadow,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                  const Icon(Icons.warning_amber_rounded, color: SentraDesign.pureWhite),
                   const SizedBox(width: 8),
                   Text(
                     widget.triggerReason != null
                         ? "DANGER DETECTED"
                         : "EMERGENCY ALERT",
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.inter(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
@@ -1360,7 +1484,7 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
               const SizedBox(height: 10),
               Text(
                 "Heard: ${widget.triggerReason}",
-                style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
               ),
             ],
             const SizedBox(height: 30),
@@ -1375,11 +1499,11 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                       height: 180 + (_controller.value * 20),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.red.withOpacity(
-                          0.2 - (_controller.value * 0.1),
+                        color: Colors.white.withOpacity(
+                          0.12 - (_controller.value * 0.06),
                         ),
                         border: Border.all(
-                          color: Colors.red.withOpacity(0.5),
+                          color: Colors.white.withOpacity(0.35),
                           width: 1,
                         ),
                       ),
@@ -1391,7 +1515,8 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                   height: 160,
                   child: CircularProgressIndicator(
                     value: _countdown / 10,
-                    valueColor: const AlwaysStoppedAnimation(Colors.red),
+                    valueColor:
+                        const AlwaysStoppedAnimation(SentraDesign.pureWhite),
                     backgroundColor: Colors.white24,
                     strokeWidth: 8,
                   ),
@@ -1401,7 +1526,7 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                   children: [
                     Text(
                       "$_countdown",
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         fontSize: 60,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
@@ -1409,7 +1534,7 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                     ),
                     Text(
                       "Sending SOS...",
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.inter(
                         color: Colors.white70,
                         fontSize: 12,
                       ),
@@ -1428,16 +1553,16 @@ class _SosCountdownDialogState extends State<SosCountdownDialog>
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  color: SentraDesign.pureWhite,
+                  borderRadius: BorderRadius.circular(999),
                 ),
                 child: Center(
                   child: Text(
                     widget.triggerReason != null
                         ? "I AM SAFE (CANCEL)"
                         : "CANCEL REQUEST",
-                    style: GoogleFonts.poppins(
-                      color: Colors.redAccent,
+                    style: GoogleFonts.inter(
+                      color: SentraDesign.uberBlack,
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       letterSpacing: 1.1,
@@ -1521,22 +1646,22 @@ class _DriftSosOverlayState extends State<DriftSosOverlay> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.warning_rounded, color: Colors.redAccent, size: 80),
+              const Icon(Icons.warning_rounded, color: SentraDesign.pureWhite, size: 80),
               const SizedBox(height: 20),
               Text(
                   "ARE YOU SAFE?", 
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)
+                  style: GoogleFonts.inter(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)
               ),
               const SizedBox(height: 10),
               Text(
                   "You strayed from your requested path.\nIf you do not respond, we will trigger an SOS dispatch.", 
                   textAlign: TextAlign.center, 
-                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 16)
+                  style: GoogleFonts.inter(color: Colors.white70, fontSize: 16)
               ),
               const SizedBox(height: 50),
               Text(
                   "$_countdown", 
-                  style: GoogleFonts.poppins(color: Colors.redAccent, fontSize: 100, fontWeight: FontWeight.w900)
+                  style: GoogleFonts.inter(color: SentraDesign.pureWhite, fontSize: 100, fontWeight: FontWeight.w900)
               ),
               const SizedBox(height: 50),
               SizedBox(
@@ -1547,13 +1672,15 @@ class _DriftSosOverlayState extends State<DriftSosOverlay> {
                     Navigator.of(context).pop(true);
                   },
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green, 
+                      backgroundColor: SentraDesign.pureWhite,
+                      foregroundColor: SentraDesign.uberBlack,
                       padding: const EdgeInsets.symmetric(vertical: 20), 
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+                      shape: const StadiumBorder(),
+                      elevation: 0,
                   ),
                   child: Text(
                       "I AM SAFE", 
-                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)
+                      style: GoogleFonts.inter(color: SentraDesign.uberBlack, fontSize: 24, fontWeight: FontWeight.bold)
                   )
                 ),
               ),
